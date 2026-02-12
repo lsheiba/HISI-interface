@@ -13,7 +13,7 @@ from starlette.responses import Response
 from fastrtc import Stream
 from jiwer import cer, wer
 
-from ..backends.registry import get_loader
+from ..backends.registry import MODEL_LOADERS, get_loader
 from ..core.config import ASRConfig, TURNConfig
 from ..core.protocols import ASRProcessor
 from ..core.store import ASRComponentsStore
@@ -161,6 +161,17 @@ class ASRServer:
                 "status": self.store.loading_status,
                 "error": self.store.loading_error,
             }
+
+        @self.app.get("/backends")
+        async def list_backends():
+            """List available ASR backends and their models."""
+            backends = []
+            for backend_id, loader in MODEL_LOADERS.items():
+                models = []
+                if hasattr(loader, "list_models"):
+                    models = loader.list_models()
+                backends.append({"id": backend_id, "models": models})
+            return {"backends": backends}
 
         @self.app.post("/upload_and_transcribe")
         async def upload_and_transcribe(audio_file: UploadFile = File(...)):

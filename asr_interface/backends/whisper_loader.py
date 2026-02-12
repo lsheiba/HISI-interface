@@ -115,3 +115,7 @@ class WhisperLoader(ModelLoader):
         except Exception as e:
             logger.error(f"Failed to load Whisper model: {e}", exc_info=True)
             raise RuntimeError(f"Failed to load Whisper model: {e}") from e
+
+    def list_models(self) -> list[dict[str, Any]]:
+        sizes = ["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo"]
+        return [{"id": s, "name": f"Whisper {s}"} for s in sizes]
