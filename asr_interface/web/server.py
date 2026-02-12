@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import threading
 from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -125,7 +126,7 @@ class ASRServer:
 
         @self.app.post("/load_model")
         async def load_model(config: ASRConfig):
-            """Load an ASR model based on the provided configuration."""
+            """Load an ASR model in a background thread."""
             config_id = self.store.get_config_id(config)
 
             if self.store.is_config_current(config):
@@ -134,39 +135,32 @@ class ASRServer:
                 )
                 return {"status": "success", "message": "Processor is already loaded."}
 
-            logger.info(f"Request to create processor for new config: {config}")
-
-            try:
-                loader = get_loader(config.backend)
-                online_processor, metadata = loader.load(config)
-
-                self.store.asr_processor = online_processor
-                self.store.separator = metadata.get("separator", " ")
-                self.store.is_ready = True
-                self.store.current_config_id = config_id
-
-                # Update RTC configuration if TURN config is provided
-                if config.turn_config:
-                    self.rtc_config = self._get_rtc_configuration(config.turn_config)
-                    logger.info(
-                        f"Updated RTC configuration with TURN server: {config.turn_config.provider}"
-                    )
-
-                logger.info(f"Processor for config ID '{config_id}' is ready.")
-                return {
-                    "status": "success",
-                    "message": "Processor created successfully.",
-                }
-
-            except Exception as e:
-                logger.error(
-                    f"Fatal error during ASR processor creation: {e}", exc_info=True
-                )
-                self.store.reset()
+            if self.store.loading_status == "loading":
                 raise HTTPException(
-                    status_code=500,
-                    detail="Failed to create processor. Check server logs.",
+                    status_code=409,
+                    detail="A model is already being loaded. Check /loading_status.",
                 )
+
+            logger.info(f"Request to create processor for new config: {config}")
+            self.store.loading_status = "loading"
+            self.store.loading_error = None
+
+            thread = threading.Thread(
+                target=self._load_model_sync,
+                args=(config, config_id),
+                daemon=True,
+            )
+            thread.start()
+
+            return {"status": "loading", "message": "Model loading started."}
+
+        @self.app.get("/loading_status")
+        async def loading_status():
+            """Get the current model loading status."""
+            return {
+                "status": self.store.loading_status,
+                "error": self.store.loading_error,
+            }
 
         @self.app.post("/upload_and_transcribe")
         async def upload_and_transcribe(audio_file: UploadFile = File(...)):
@@ -336,6 +330,33 @@ class ASRServer:
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
             )
+
+    def _load_model_sync(self, config: ASRConfig, config_id: str) -> None:
+        """Synchronous model loading, called from a background thread."""
+        try:
+            loader = get_loader(config.backend)
+            online_processor, metadata = loader.load(config)
+
+            self.store.asr_processor = online_processor
+            self.store.separator = metadata.get("separator", " ")
+            self.store.is_ready = True
+            self.store.current_config_id = config_id
+            self.store.loading_status = "ready"
+
+            if config.turn_config:
+                self.rtc_config = self._get_rtc_configuration(config.turn_config)
+                logger.info(
+                    f"Updated RTC configuration with TURN server: {config.turn_config.provider}"
+                )
+
+            logger.info(f"Processor for config ID '{config_id}' is ready.")
+
+        except Exception as e:
+            logger.error(
+                f"Fatal error during ASR processor creation: {e}", exc_info=True
+            )
+            self.store.loading_status = "error"
+            self.store.loading_error = str(e)
 
     def _create_upload_processor(
         self, processor_template: ASRProcessor

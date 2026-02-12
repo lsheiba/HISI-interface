@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import threading
 from typing import Any
 
 from .config import ASRConfig
@@ -27,8 +28,10 @@ class ASRComponentsStore:
             "separator": " ",
             "is_ready": False,
             "current_config_id": None,
+            "loading_status": "idle",
+            "loading_error": None,
         }
-        self._lock = None  # Could be replaced with threading.Lock() if needed
+        self._lock = threading.Lock()
 
     @property
     def asr_processor(self) -> ASRProcessor | None:
@@ -64,6 +67,26 @@ class ASRComponentsStore:
     def is_ready(self, ready: bool) -> None:
         """Set the ready state."""
         self._store["is_ready"] = ready
+
+    @property
+    def loading_status(self) -> str:
+        """Get the current loading status."""
+        return self._store.get("loading_status", "idle")
+
+    @loading_status.setter
+    def loading_status(self, status: str) -> None:
+        """Set the loading status."""
+        self._store["loading_status"] = status
+
+    @property
+    def loading_error(self) -> str | None:
+        """Get the loading error message, if any."""
+        return self._store.get("loading_error")
+
+    @loading_error.setter
+    def loading_error(self, error: str | None) -> None:
+        """Set the loading error message."""
+        self._store["loading_error"] = error
 
     @property
     def current_config_id(self) -> str | None:
@@ -112,6 +135,8 @@ class ASRComponentsStore:
                 "asr_processor": None,
                 "is_ready": False,
                 "current_config_id": None,
+                "loading_status": "idle",
+                "loading_error": None,
             }
         )
         logger.info("ASR components store reset")
