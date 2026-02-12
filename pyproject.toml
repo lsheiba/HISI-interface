@@ -51,7 +51,7 @@ mlx-whisper = [
     "mlx-whisper>=0.4.0; sys_platform == \"darwin\""
 ]
 mlx-audio = [
-    "mlx-audio>=0.2.0; sys_platform == \"darwin\""
+    "mlx-audio>=0.3.0; sys_platform == \"darwin\""
 ]
 dev = [
     "pytest>=7.4.0",
