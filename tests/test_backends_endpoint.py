@@ -41,9 +41,7 @@ class TestBackendsEndpoint:
         data = resp.json()
 
         # mlx_audio backend should have models since it implements list_models()
-        mlx_audio = next(
-            (b for b in data["backends"] if b["id"] == "mlx_audio"), None
-        )
+        mlx_audio = next((b for b in data["backends"] if b["id"] == "mlx_audio"), None)
         if mlx_audio is not None:
             assert len(mlx_audio["models"]) > 0
             for model in mlx_audio["models"]:

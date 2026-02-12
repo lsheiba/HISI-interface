@@ -159,7 +159,9 @@ class TestModelCatalog:
         required_fields = {"id", "name", "params", "timestamps", "diarization"}
         for model in MLX_AUDIO_MODELS:
             missing = required_fields - set(model.keys())
-            assert not missing, f"Model {model.get('id', '?')} missing fields: {missing}"
+            assert (
+                not missing
+            ), f"Model {model.get('id', '?')} missing fields: {missing}"
 
 
 # --- Tests for loader ---

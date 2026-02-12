@@ -22,12 +22,20 @@ const viewLoading = document.getElementById('view-loading');
 const viewTranscription = document.getElementById('view-transcription');
 const loadModelButton = document.getElementById('load-model-button');
 const configTextarea = document.getElementById('config-json');
+const backendSelect = document.getElementById('backend-select');
+const modelSelect = document.getElementById('model-select');
+const languageSelect = document.getElementById('language-select');
+const advancedToggle = document.getElementById('advanced-toggle-checkbox');
+const advancedConfig = document.getElementById('advanced-config');
 const startButton = document.getElementById('start-button');
 const startButtonText = document.querySelector('.start-button-txt');
 const micImg = document.querySelector('.microphone-icon');
 const transcriptTextElement = document.getElementById('transcript-text');
 const segmentsTableBody = document.getElementById('segments-table-body-recording');
 const resetBtnContainer = document.getElementById('reset-recording-btn-container');
+
+// Backend catalog cache
+let backendsData = [];
 
 // Default Configuration for the Text Area
 const defaultConfig = {
@@ -403,14 +411,54 @@ function updateTimeline(segments) {
 // --- WebRTC and Transcription Logic ---
 
 /**
+ * Builds the config payload from dropdowns or the advanced JSON textarea.
+ */
+function buildConfigPayload() {
+    if (advancedToggle.checked && configTextarea.value.trim()) {
+        return JSON.parse(configTextarea.value);
+    }
+    return {
+        "model": modelSelect.value,
+        "backend": backendSelect.value,
+        "lan": languageSelect.value,
+        "task": "transcribe",
+        "min_chunk_size": 1.0,
+        "buffer_trimming": "segment",
+        "buffer_trimming_sec": 10.0
+    };
+}
+
+/**
+ * Polls /loading_status until the model is ready or an error occurs.
+ */
+async function pollLoadingStatus() {
+    const maxAttempts = 300; // 5 minutes at 1s intervals
+    for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        try {
+            const resp = await fetch('/loading_status');
+            const data = await resp.json();
+            if (data.status === 'ready') {
+                return { success: true };
+            }
+            if (data.status === 'error') {
+                return { success: false, error: data.error };
+            }
+        } catch (e) {
+            console.warn('Error polling loading status:', e);
+        }
+    }
+    return { success: false, error: 'Loading timed out' };
+}
+
+/**
  * Loads the transcription model by sending a configuration to the server.
  */
 async function loadModel() {
     switchView('view-loading');
-    const jsonString = configTextarea.value;
     let configPayload;
     try {
-        configPayload = JSON.parse(jsonString);
+        configPayload = buildConfigPayload();
     } catch (e) {
         alert(`Invalid JSON configuration:\n${e.message}`);
         switchView('view-model-selection');
@@ -426,13 +474,75 @@ async function loadModel() {
             const errorData = await response.json();
             throw new Error(errorData.detail || `Server error: ${response.status}`);
         }
-        document.title = "Whisper Transcription: Live";
+
+        const data = await response.json();
+
+        if (data.status === 'loading') {
+            // Non-blocking: poll until ready
+            const result = await pollLoadingStatus();
+            if (!result.success) {
+                throw new Error(result.error || 'Model loading failed');
+            }
+        }
+
+        document.title = "HISI: Live";
         switchView('view-transcription');
         window.createWaveSurfer();
     } catch (err) {
         alert(`Error loading model: ${err.message}`);
         switchView('view-model-selection');
     }
+}
+
+/**
+ * Fetches the backend catalog from /backends and populates the dropdowns.
+ */
+async function populateBackendDropdowns() {
+    try {
+        const resp = await fetch('/backends');
+        const data = await resp.json();
+        backendsData = data.backends || [];
+
+        backendSelect.innerHTML = '';
+        backendsData.forEach(backend => {
+            const opt = document.createElement('option');
+            opt.value = backend.id;
+            opt.textContent = backend.id;
+            backendSelect.appendChild(opt);
+        });
+
+        if (backendsData.length > 0) {
+            backendSelect.value = backendsData[0].id;
+            updateModelDropdown();
+        }
+    } catch (e) {
+        console.warn('Failed to load backends:', e);
+        // Fall back to showing just the JSON textarea
+        backendSelect.innerHTML = '<option value="">Failed to load</option>';
+    }
+}
+
+/**
+ * Updates the model dropdown based on the selected backend.
+ */
+function updateModelDropdown() {
+    const selectedBackend = backendsData.find(b => b.id === backendSelect.value);
+    modelSelect.innerHTML = '';
+    modelSelect.disabled = true;
+
+    if (selectedBackend && selectedBackend.models.length > 0) {
+        selectedBackend.models.forEach(model => {
+            const opt = document.createElement('option');
+            opt.value = model.id;
+            opt.textContent = model.name || model.id;
+            modelSelect.appendChild(opt);
+        });
+        modelSelect.disabled = false;
+    } else {
+        modelSelect.innerHTML = '<option value="">No models available</option>';
+    }
+
+    syncJsonFromDropdowns();
 }
 
 /**
@@ -754,10 +864,39 @@ function displayRecordingRTF(rtf, processingTime, audioDuration) {
     `;
 }
 
+// --- Dropdown sync helpers ---
+
+/**
+ * Syncs the JSON textarea from the current dropdown values.
+ */
+function syncJsonFromDropdowns() {
+    if (!advancedToggle.checked) {
+        try {
+            const config = buildConfigPayload();
+            configTextarea.value = JSON.stringify(config, null, 2);
+        } catch (e) {
+            // Ignore if dropdowns aren't ready yet
+        }
+    }
+}
+
 // --- Event Listeners and Initialization ---
 
 // Initialize default config in textarea
 configTextarea.value = JSON.stringify(defaultConfig, null, 2);
+
+// Advanced toggle
+advancedToggle.addEventListener('change', () => {
+    advancedConfig.style.display = advancedToggle.checked ? 'block' : 'none';
+    if (advancedToggle.checked) {
+        syncJsonFromDropdowns();
+    }
+});
+
+// Backend dropdown changes update the model dropdown
+backendSelect.addEventListener('change', updateModelDropdown);
+modelSelect.addEventListener('change', syncJsonFromDropdowns);
+languageSelect.addEventListener('change', syncJsonFromDropdowns);
 
 // Load Model Button
 loadModelButton.addEventListener('click', loadModel);
@@ -804,6 +943,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTimeline(); // Initialize timeline on DOMContentLoaded
     updateButtonState(); // Set initial button state
     showResetButtonIfNeeded(); // Set initial reset button visibility
+    populateBackendDropdowns(); // Populate backend/model dropdowns from server
 });
 
 window.showResetButtonIfNeeded = showResetButtonIfNeeded;

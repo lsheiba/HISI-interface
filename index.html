@@ -14,8 +14,47 @@
 <body>
     <div id="view-model-selection">
         <h1>Configure ASR Engine</h1>
-        <label for="config-json">ASR Engine Parameters (JSON):</label>
-        <textarea id="config-json" class="config-json" rows="10"></textarea>
+
+        <div class="model-dropdowns">
+            <label for="backend-select">Backend:</label>
+            <select id="backend-select" class="model-select">
+                <option value="">Loading backends...</option>
+            </select>
+
+            <label for="model-select">Model:</label>
+            <select id="model-select" class="model-select" disabled>
+                <option value="">Select a backend first</option>
+            </select>
+
+            <label for="language-select">Language:</label>
+            <select id="language-select" class="model-select">
+                <option value="auto">Auto-detect</option>
+                <option value="en">English</option>
+                <option value="zh">Chinese</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="de">German</option>
+                <option value="fr">French</option>
+                <option value="es">Spanish</option>
+                <option value="pt">Portuguese</option>
+                <option value="ru">Russian</option>
+                <option value="ar">Arabic</option>
+                <option value="hi">Hindi</option>
+            </select>
+        </div>
+
+        <div class="advanced-toggle-container">
+            <label class="advanced-toggle">
+                <input type="checkbox" id="advanced-toggle-checkbox">
+                <span>Advanced (JSON)</span>
+            </label>
+        </div>
+
+        <div id="advanced-config" style="display: none;">
+            <label for="config-json">ASR Engine Parameters (JSON):</label>
+            <textarea id="config-json" class="config-json" rows="10"></textarea>
+        </div>
+
         <button id="load-model-button">Load Engine and Start</button>
     </div>
 

@@ -77,6 +77,46 @@ body {
     width: 100%;
     font-weight: 600;
 }
+.model-dropdowns {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin-bottom: 1rem;
+}
+.model-dropdowns label {
+    font-weight: 600;
+    font-size: 13px;
+    margin-left: 0.3em;
+    margin-top: 0.5rem;
+}
+.model-select {
+    width: 100%;
+    padding: 10px;
+    font-size: 0.9rem;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    background: #F9FAFB;
+    color: var(--text-dark);
+    appearance: auto;
+}
+.model-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.advanced-toggle-container {
+    margin-bottom: 1rem;
+}
+.advanced-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+}
+.advanced-toggle input[type="checkbox"] {
+    margin: 0;
+}
 
 /* Loading Spinner */
 #view-loading {
