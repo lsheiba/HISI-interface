@@ -15,6 +15,14 @@ except ImportError:
     # MLX Whisper not available, skip it
     pass
 
+# Try to import MLX Audio loader (Qwen3-ASR, GLM-ASR, VibeVoice-ASR)
+try:
+    from .mlx_audio_loader import MLXAudioLoader
+
+    MODEL_LOADERS["mlx_audio"] = MLXAudioLoader()
+except ImportError:
+    pass
+
 # Try to import Whisper loader (standard OpenAI Whisper, permissive license)
 try:
     from .whisper_loader import WhisperLoader
