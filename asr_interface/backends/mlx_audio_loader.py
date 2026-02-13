@@ -1,4 +1,4 @@
-# ABOUTME: MLX-Audio ASR backend for Qwen3-ASR, GLM-ASR, and VibeVoice-ASR models.
+# ABOUTME: MLX-Audio ASR backend for Qwen3-ASR, GLM-ASR, VibeVoice-ASR, and Parakeet models.
 # ABOUTME: Provides a unified interface to mlx-audio STT models on Apple Silicon.
 
 import logging
@@ -55,6 +55,27 @@ MLX_AUDIO_MODELS: list[dict[str, Any]] = [
         "timestamps": True,
         "diarization": True,
     },
+    {
+        "id": "mlx-community/parakeet-tdt-0.6b-v2",
+        "name": "Parakeet TDT 0.6B v2",
+        "params": "0.6B",
+        "timestamps": True,
+        "diarization": False,
+    },
+    {
+        "id": "mlx-community/parakeet-tdt-0.6b-v3",
+        "name": "Parakeet TDT 0.6B v3",
+        "params": "0.6B",
+        "timestamps": True,
+        "diarization": False,
+    },
+    {
+        "id": "mlx-community/parakeet-tdt-1.1b",
+        "name": "Parakeet TDT 1.1B",
+        "params": "1.1B",
+        "timestamps": True,
+        "diarization": False,
+    },
 ]
 
 SAMPLING_RATE = 16000
@@ -81,6 +102,41 @@ def _normalize_segment(segment: dict[str, Any], model_id: str) -> dict[str, Any]
             },
         }
     return segment
+
+
+def _extract_segments(result: Any, model_id: str) -> list[dict[str, Any]]:
+    """Extract normalized segments from any mlx-audio model output format.
+
+    Handles dict-based outputs (Qwen3, GLM, VibeVoice) with .segments,
+    and dataclass-based outputs (Parakeet) with .sentences.
+    """
+    # Dict-based models: result.segments is a list of dicts
+    if hasattr(result, "segments"):
+        segments = result.segments if result.segments else []
+        return [_normalize_segment(s, model_id) for s in segments]
+
+    # Parakeet: result.sentences is a list of AlignedSentence dataclasses
+    if hasattr(result, "sentences"):
+        segments = []
+        for sentence in result.sentences:
+            seg: dict[str, Any] = {
+                "start": sentence.start,
+                "end": sentence.end,
+                "text": sentence.text,
+            }
+            if hasattr(sentence, "tokens") and sentence.tokens:
+                seg["words"] = [
+                    {
+                        "start": t.start,
+                        "end": t.end,
+                        "word": t.text,
+                    }
+                    for t in sentence.tokens
+                ]
+            segments.append(seg)
+        return segments
+
+    return []
 
 
 class MLXAudioASR(ASRBase):
@@ -132,8 +188,7 @@ class MLXAudioASR(ASRBase):
                 kwargs["language"] = self.original_language
             result = self.model.generate(tmp.name, **kwargs)
 
-        segments = result.segments if hasattr(result, "segments") else []
-        return [_normalize_segment(s, self.model_id) for s in segments]
+        return _extract_segments(result, self.model_id)
 
     def ts_words(
         self, segments: list[dict[str, Any]]

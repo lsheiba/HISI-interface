@@ -30,6 +30,7 @@ class ASRComponentsStore:
             "current_config_id": None,
             "loading_status": "idle",
             "loading_error": None,
+            "loading_message": None,
         }
         self._lock = threading.Lock()
 
@@ -89,6 +90,16 @@ class ASRComponentsStore:
         self._store["loading_error"] = error
 
     @property
+    def loading_message(self) -> str | None:
+        """Get the loading progress message."""
+        return self._store.get("loading_message")
+
+    @loading_message.setter
+    def loading_message(self, message: str | None) -> None:
+        """Set the loading progress message."""
+        self._store["loading_message"] = message
+
+    @property
     def current_config_id(self) -> str | None:
         """Get the current configuration ID."""
         return self._store.get("current_config_id")
@@ -137,6 +148,7 @@ class ASRComponentsStore:
                 "current_config_id": None,
                 "loading_status": "idle",
                 "loading_error": None,
+                "loading_message": None,
             }
         )
         logger.info("ASR components store reset")

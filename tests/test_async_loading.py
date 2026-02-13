@@ -150,6 +150,13 @@ class TestLoadingStatus:
         assert resp.status_code == 200
         assert resp.json()["status"] == "success"
 
+    def test_loading_status_includes_message(self, client):
+        """GET /loading_status includes a message field."""
+        resp = client.get("/loading_status")
+        data = resp.json()
+        assert "message" in data
+        assert data["message"] is None
+
 
 class TestStoreLoadingState:
     def test_store_has_loading_status(self, store):
@@ -157,6 +164,9 @@ class TestStoreLoadingState:
 
     def test_store_has_loading_error(self, store):
         assert store.loading_error is None
+
+    def test_store_has_loading_message(self, store):
+        assert store.loading_message is None
 
     def test_store_loading_status_settable(self, store):
         store.loading_status = "loading"
@@ -166,9 +176,15 @@ class TestStoreLoadingState:
         store.loading_error = "something broke"
         assert store.loading_error == "something broke"
 
+    def test_store_loading_message_settable(self, store):
+        store.loading_message = "Downloading model weights..."
+        assert store.loading_message == "Downloading model weights..."
+
     def test_store_reset_clears_loading_state(self, store):
         store.loading_status = "error"
         store.loading_error = "something broke"
+        store.loading_message = "some message"
         store.reset()
         assert store.loading_status == "idle"
         assert store.loading_error is None
+        assert store.loading_message is None

@@ -71,6 +71,27 @@ def vibevoice_segments():
     ]
 
 
+@pytest.fixture
+def parakeet_segments():
+    """Parakeet output format: segments with start/end and word-level tokens."""
+    return [
+        {
+            "start": 0.0,
+            "end": 2.5,
+            "text": "Hello world",
+            "words": [
+                {"start": 0.0, "end": 1.2, "word": "Hello"},
+                {"start": 1.3, "end": 2.5, "word": "world"},
+            ],
+        },
+        {
+            "start": 3.0,
+            "end": 5.0,
+            "text": "How are you",
+        },
+    ]
+
+
 # --- Tests for ts_words ---
 
 
@@ -108,6 +129,17 @@ class TestTsWords:
             (3.0, 5.0, "How are you"),
         ]
 
+    def test_parakeet_mixed_word_and_segment_level(self, parakeet_segments):
+        """Parakeet may have words on some segments but not others."""
+        asr = MLXAudioASR.__new__(MLXAudioASR)
+        asr.model_id = "mlx-community/parakeet-tdt-0.6b-v2"
+        result = asr.ts_words(parakeet_segments)
+        assert result == [
+            (0.0, 1.2, "Hello"),
+            (1.3, 2.5, "world"),
+            (3.0, 5.0, "How are you"),
+        ]
+
     def test_empty_segments(self):
         """Empty segment list returns empty word list."""
         asr = MLXAudioASR.__new__(MLXAudioASR)
@@ -134,6 +166,11 @@ class TestSegmentsEndTs:
         asr.model_id = "mlx-community/VibeVoice-ASR-bf16"
         assert asr.segments_end_ts(vibevoice_segments) == [2.5, 5.0]
 
+    def test_parakeet_end_timestamps(self, parakeet_segments):
+        asr = MLXAudioASR.__new__(MLXAudioASR)
+        asr.model_id = "mlx-community/parakeet-tdt-0.6b-v2"
+        assert asr.segments_end_ts(parakeet_segments) == [2.5, 5.0]
+
     def test_empty_segments(self):
         asr = MLXAudioASR.__new__(MLXAudioASR)
         asr.model_id = "mlx-community/Qwen3-ASR-0.6B-8bit"
@@ -151,6 +188,9 @@ class TestModelCatalog:
             "mlx-community/GLM-ASR-Nano-2512-4bit",
             "mlx-community/VibeVoice-ASR-4bit",
             "mlx-community/VibeVoice-ASR-bf16",
+            "mlx-community/parakeet-tdt-0.6b-v2",
+            "mlx-community/parakeet-tdt-0.6b-v3",
+            "mlx-community/parakeet-tdt-1.1b",
         }
         actual_ids = {m["id"] for m in MLX_AUDIO_MODELS}
         assert expected_ids == actual_ids
@@ -223,6 +263,62 @@ class TestTranscribe:
         assert segments[0]["start"] == 0.0
         assert segments[0]["end"] == 2.5
         assert segments[0]["text"] == "Hello world"
+
+    @patch("asr_interface.backends.mlx_audio_loader.mlx_audio_load")
+    def test_transcribe_normalizes_parakeet_output(self, mock_load):
+        """transcribe() converts Parakeet's AlignedResult dataclasses to dicts."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class FakeToken:
+            id: int
+            text: str
+            start: float
+            duration: float
+            end: float = 0.0
+
+            def __post_init__(self):
+                self.end = self.start + self.duration
+
+        @dataclass
+        class FakeSentence:
+            text: str
+            tokens: list
+            start: float = 0.0
+            end: float = 0.0
+
+        @dataclass
+        class FakeResult:
+            text: str
+            sentences: list
+
+        tokens = [
+            FakeToken(id=0, text="Hello", start=0.0, duration=1.2),
+            FakeToken(id=1, text="world", start=1.3, duration=1.2),
+        ]
+        sentence = FakeSentence(text="Hello world", tokens=tokens, start=0.0, end=2.5)
+        result = FakeResult(text="Hello world", sentences=[sentence])
+
+        mock_model = MagicMock()
+        mock_model.generate.return_value = result
+        mock_load.return_value = mock_model
+
+        asr = MLXAudioASR.__new__(MLXAudioASR)
+        asr.model = mock_model
+        asr.model_id = "mlx-community/parakeet-tdt-0.6b-v2"
+        asr.original_language = "en"
+        asr.transcribe_kargs = {}
+
+        audio = np.zeros(16000, dtype=np.float32)
+        segments = asr.transcribe(audio)
+
+        assert len(segments) == 1
+        assert segments[0]["start"] == 0.0
+        assert segments[0]["end"] == 2.5
+        assert segments[0]["text"] == "Hello world"
+        # Word-level timestamps should be preserved
+        assert len(segments[0]["words"]) == 2
+        assert segments[0]["words"][0]["word"] == "Hello"
 
     @patch("asr_interface.backends.mlx_audio_loader.mlx_audio_load")
     def test_transcribe_normalizes_vibevoice_output(self, mock_load):

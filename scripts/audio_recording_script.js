@@ -432,12 +432,16 @@ function buildConfigPayload() {
  * Polls /loading_status until the model is ready or an error occurs.
  */
 async function pollLoadingStatus() {
+    const loadingMsg = document.getElementById('loading-message');
     const maxAttempts = 300; // 5 minutes at 1s intervals
     for (let i = 0; i < maxAttempts; i++) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         try {
             const resp = await fetch('/loading_status');
             const data = await resp.json();
+            if (data.message && loadingMsg) {
+                loadingMsg.textContent = data.message;
+            }
             if (data.status === 'ready') {
                 return { success: true };
             }

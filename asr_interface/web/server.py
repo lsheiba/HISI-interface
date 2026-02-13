@@ -160,6 +160,7 @@ class ASRServer:
             return {
                 "status": self.store.loading_status,
                 "error": self.store.loading_error,
+                "message": self.store.loading_message,
             }
 
         @self.app.get("/backends")
@@ -345,7 +346,13 @@ class ASRServer:
     def _load_model_sync(self, config: ASRConfig, config_id: str) -> None:
         """Synchronous model loading, called from a background thread."""
         try:
+            self.store.loading_message = (
+                f"Downloading and loading model: {config.model}"
+            )
+
             loader = get_loader(config.backend)
+
+            self.store.loading_message = f"Loading model weights: {config.model}"
             online_processor, metadata = loader.load(config)
 
             self.store.asr_processor = online_processor
@@ -353,6 +360,7 @@ class ASRServer:
             self.store.is_ready = True
             self.store.current_config_id = config_id
             self.store.loading_status = "ready"
+            self.store.loading_message = None
 
             if config.turn_config:
                 self.rtc_config = self._get_rtc_configuration(config.turn_config)
@@ -368,6 +376,7 @@ class ASRServer:
             )
             self.store.loading_status = "error"
             self.store.loading_error = str(e)
+            self.store.loading_message = None
 
     def _create_upload_processor(
         self, processor_template: ASRProcessor
