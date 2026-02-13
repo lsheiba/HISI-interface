@@ -131,6 +131,7 @@ const createWaveSurfer = () => {
         waveColor: '#E96C64',
         progressColor: '#F8A05D',
         minPxPerSec: 1,
+        normalize: true,
         plugins: [
             regions,
             TimelinePlugin.create(),
@@ -140,10 +141,6 @@ const createWaveSurfer = () => {
                 progressColor: '#F8A05D',
             })
         ],
-        barGap: 0,
-        barHeight: 3,
-        barWidth: 2,
-        barRadius: 10,
     });
 
     wavesurfer.registerPlugin(
@@ -389,7 +386,6 @@ function updateSegmentsTable(newSegments) {
             start: segment.start,
             end: segment.end,
             color: colors[colorIndex % colors.length],
-            content: segment.text,
             drag: false,
             resize: false,
         });
@@ -580,7 +576,7 @@ function initTimeline() {
             overrideItems: true
         },
         selectable: true,
-        stack: true,
+        stack: false,
         itemsAlwaysDraggable: false,
         showMajorLabels: false,
         format: {

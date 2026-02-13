@@ -17,10 +17,7 @@ wavesurfer = WaveSurfer.create({
     waveColor: '#F8A05D',
     progressColor: '#E96C64',
     minPxPerSec: 1,
-    barGap: 0,
-    barHeight: 3,
-    barWidth: 2,
-    barRadius: 10,
+    normalize: true,
 });
 
 let scrollingWaveform = false;
@@ -135,6 +132,7 @@ const createWaveSurfer = () => {
             progressColor: '#F8A05D',
             url: recordedUrl,
             minPxPerSec: 1,
+            normalize: true,
             plugins: [
                 recordedRegions,
                 TimelinePlugin.create(),
@@ -144,10 +142,6 @@ const createWaveSurfer = () => {
                     progressColor: '#F8A05D',
                 }),
             ],
-            barGap: 0,
-            barHeight: 3,
-            barWidth: 2,
-            barRadius: 10,
         });
 
         // Register Zoom Plugin for the playback waveform
@@ -178,7 +172,6 @@ const createWaveSurfer = () => {
                     recordedRegions.addRegion({
                         start: segment.start,
                         end: segment.end,
-                        content: segment.text,
                         drag: false,
                         resize: false,
                         color: colors[colorIndex % colors.length],

@@ -346,7 +346,7 @@ function initTimeline() {
             updateTime: true,
             overrideItems: true
         },
-        stack: true,
+        stack: false,
         itemsAlwaysDraggable: false,
         showMajorLabels: false,
         format: {
@@ -459,6 +459,7 @@ async function pollLoadingStatus() {
  * Loads the transcription model by sending a configuration to the server.
  */
 async function loadModel() {
+    loadModelButton.disabled = true;
     switchView('view-loading');
     let configPayload;
     try {
@@ -466,6 +467,7 @@ async function loadModel() {
     } catch (e) {
         alert(`Invalid JSON configuration:\n${e.message}`);
         switchView('view-model-selection');
+        loadModelButton.disabled = false;
         return;
     }
     try {
@@ -495,6 +497,8 @@ async function loadModel() {
     } catch (err) {
         alert(`Error loading model: ${err.message}`);
         switchView('view-model-selection');
+    } finally {
+        loadModelButton.disabled = false;
     }
 }
 
@@ -778,7 +782,6 @@ function addRegionsToRecordedWaveform() {
             window.regions.addRegion({
                 start: segment.start,
                 end: segment.end,
-                content: segment.text,
                 color: getRandomColor(),
                 drag: false,
                 resize: false,
