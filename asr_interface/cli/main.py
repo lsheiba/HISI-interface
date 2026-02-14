@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -23,21 +24,35 @@ app = typer.Typer(
 console = Console()
 
 
-def setup_logging(verbose: bool = False) -> None:
+def setup_logging(verbose: bool = False, log_file: Path | None = None) -> None:
     """
     Setup logging configuration.
 
     Args:
         verbose: Enable verbose logging
+        log_file: Optional file path to write logs
     """
     level = logging.DEBUG if verbose else logging.INFO
 
-    logging.basicConfig(
-        level=level,
-        format="%(message)s",
-        datefmt="[%X]",
-        handlers=[RichHandler(console=console, rich_tracebacks=True)],
-    )
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.setLevel(level)
+
+    console_handler = RichHandler(console=console, rich_tracebacks=True)
+    console_handler.setLevel(level)
+    console_handler.setFormatter(logging.Formatter("%(message)s", datefmt="[%X]"))
+    root_logger.addHandler(console_handler)
+
+    if log_file is not None:
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setLevel(level)
+        file_handler.setFormatter(
+            logging.Formatter(
+                "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
+        root_logger.addHandler(file_handler)
 
 
 @app.command()
@@ -61,7 +76,12 @@ def serve(
     - Model evaluation capabilities
     - Web interface for configuration and monitoring
     """
-    setup_logging(verbose)
+    start_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / f"hisi-interface-{start_timestamp}.log"
+
+    setup_logging(verbose, log_file=log_file)
     logger = logging.getLogger(__name__)
 
     try:
@@ -77,6 +97,7 @@ def serve(
         fastapi_app = create_app(store)
 
         logger.info(f"Starting ASR interface server on {host}:{port}")
+        logger.info(f"Writing logs to {log_file}")
         logger.info("Press Ctrl+C to stop the server")
 
         # Start the server
@@ -86,6 +107,7 @@ def serve(
             port=port,
             reload=reload,
             log_level="debug" if verbose else "info",
+            log_config=None,
         )
 
     except KeyboardInterrupt:

@@ -53,7 +53,7 @@ The core abstraction uses Python Protocols (`asr_interface/core/protocols.py`):
 - **`ASRProcessor`** — Protocol for real-time streaming processors. Methods: `insert_audio_chunk()`, `process_iter()`, `init()`, `finish()`.
 - **`ModelLoader`** — Protocol for backend factories. Method: `load(config) → (processor, info_dict)`.
 
-Backends register themselves in `asr_interface/backends/registry.py` via `register_loader()`. Currently registered: `"whisper"` and `"mlx_whisper"`.
+Backends register themselves in `asr_interface/backends/registry.py` via `register_loader()`. Currently registered: `"whisper"`, `"mlx_whisper"`, and `"mlx_audio"` (supports Qwen3-ASR, GLM-ASR, VibeVoice-ASR, and Parakeet models).
 
 ### Real-Time Streaming Pipeline
 
@@ -73,6 +73,8 @@ Browser (WebRTC) → RealTimeASRHandler (fastRTC) → OnlineASRProcessor → ASR
 |--------|------|---------|
 | GET | `/` | Serves the HTML interface |
 | POST | `/load_model` | Load/swap ASR model |
+| GET | `/loading_status` | Get model loading progress |
+| GET | `/backends` | List available backends and their models |
 | POST | `/upload_and_transcribe` | File upload transcription |
 | POST | `/evaluate_model` | WER/CER evaluation |
 | GET | `/transcript` | Get WebRTC session transcript |

@@ -40,6 +40,10 @@ class ASRConfig(BaseModel):
     min_chunk_size: float = Field(
         default=1.0, description="Minimum chunk size in seconds"
     )
+    enable_streaming: bool = Field(
+        default=True,
+        description="Enable incremental streaming updates for transcription outputs",
+    )
     backend: str = Field(
         default="whisper_timestamped", description="ASR backend to use"
     )

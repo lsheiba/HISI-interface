@@ -335,10 +335,9 @@ document.getElementById('audio_file').addEventListener('change', function(e) {
     });
 });
 
-document.getElementById('start-trasncript-btn').addEventListener('click', function(e) {
-    document.getElementById('start-trasncript-btn').textContent = 'Transcribing...';
+document.getElementById('start-trasncript-btn').addEventListener('click', async function(e) {
     e.preventDefault();
-    startTranscription();
+    await startTranscription();
 });
 
 // --- Transcription Related Functions ---
@@ -503,59 +502,125 @@ function displayRTF(rtf, processingTime, audioDuration) {
  * Initiates the audio transcription process by sending the file to the server.
  */
 async function startTranscription() {
-    const fileInput = document.getElementById('audio_file');
-    const file = fileInput.files[0];
-    if (!file) return;
+    const startBtn = document.getElementById('start-trasncript-btn');
+    try {
+        const fileInput = document.getElementById('audio_file');
+        const file = fileInput?.files?.[0];
+        if (!file) {
+            alert('Please select an audio file first.');
+            return;
+        }
+        if (!wavesurfer) {
+            alert('Waveform is not ready yet. Please re-select the audio file and try again.');
+            return;
+        }
 
-    const transcriptionStartTime = performance.now();
-    const audioDuration = wavesurfer.getDuration();
+        startBtn.textContent = 'Transcribing...';
+        startBtn.disabled = true;
 
-    const formData = new FormData();
-    formData.append('audio_file', file);
+        const transcriptionStartTime = performance.now();
+        const audioDuration = wavesurfer.getDuration() || 0;
 
-    addedSegmentKeys = new Set();
-    addedSegmentKeysTable = new Set();
-    document.getElementById('segments-table-body-upload').innerHTML = '';
-    if (timelineItems) timelineItems.clear();
+        const formData = new FormData();
+        formData.append('audio_file', file);
 
-    const response = await fetch('/upload_and_transcribe', {
-        method: 'POST',
-        body: formData,
-    });
+        addedSegmentKeys = new Set();
+        addedSegmentKeysTable = new Set();
+        segments = [];
+        document.getElementById('output').textContent = '';
+        document.getElementById('segments-table-body-upload').innerHTML = '';
+        if (timelineItems) {
+            timelineItems.clear();
+        }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
+        const response = await fetch('/upload_and_transcribe', {
+            method: 'POST',
+            body: formData,
+        });
 
-    wavesurfer.play(); // Start playback
-
-    while (true) {
-        isTranscribing = true;
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        const match = chunk.match(/data:\s*(\{.*\})/);
-        if (match) {
+        if (!response.ok) {
+            let details = `HTTP ${response.status}`;
             try {
-                const data = JSON.parse(match[1]);
-                handleTranscriptionEvent(data);
-            } catch (e) {
-                console.error('JSON parse error:', e, match[1]);
+                const err = await response.json();
+                details = err.detail || details;
+            } catch (_) {
+                // Keep fallback details.
+            }
+            throw new Error(`Transcription request failed: ${details}`);
+        }
+
+        if (!response.body) {
+            throw new Error('Server returned an empty response body.');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let sseBuffer = "";
+
+        wavesurfer.play();
+
+        while (true) {
+            isTranscribing = true;
+            const { value, done } = await reader.read();
+            if (done) {
+                break;
+            }
+
+            sseBuffer += decoder.decode(value, { stream: true });
+            const frames = sseBuffer.split('\n\n');
+            sseBuffer = frames.pop() || '';
+
+            for (const frame of frames) {
+                const dataLine = frame
+                    .split('\n')
+                    .find((line) => line.startsWith('data:'));
+                if (!dataLine) {
+                    continue;
+                }
+
+                try {
+                    const data = JSON.parse(dataLine.slice(5).trim());
+                    handleTranscriptionEvent(data);
+                } catch (e) {
+                    console.error('JSON parse error:', e, dataLine);
+                }
             }
         }
+
+        if (sseBuffer.trim()) {
+            const dataLine = sseBuffer
+                .split('\n')
+                .find((line) => line.startsWith('data:'));
+            if (dataLine) {
+                try {
+                    handleTranscriptionEvent(JSON.parse(dataLine.slice(5).trim()));
+                } catch (e) {
+                    console.error('JSON parse error:', e, dataLine);
+                }
+            }
+        }
+
+        const transcriptionEndTime = performance.now();
+        const processingTimeMs = transcriptionEndTime - transcriptionStartTime;
+        const processingTimeSeconds = processingTimeMs / 1000;
+        const safeAudioDuration = audioDuration > 0 ? audioDuration : 1;
+        const rtf = processingTimeSeconds / safeAudioDuration;
+
+        displayRTF(rtf, processingTimeSeconds, audioDuration);
+        updateTimeline(segments);
+        isTranscribing = false;
+
+        if (window.timeline2) {
+            window.timeline2.focus(0);
+        }
+    } catch (error) {
+        isTranscribing = false;
+        console.error('Transcription failed:', error);
+        alert(error.message || 'Transcription failed. Check browser console for details.');
+    } finally {
+        startBtn.textContent = 'Start Transcription';
+        startBtn.disabled = false;
     }
-
-    const transcriptionEndTime = performance.now();
-    const processingTimeMs = transcriptionEndTime - transcriptionStartTime;
-    const processingTimeSeconds = processingTimeMs / 1000;
-    const rtf = processingTimeSeconds / audioDuration;
-
-    displayRTF(rtf, processingTimeSeconds, audioDuration);
-    updateTimeline(segments);
-    isTranscribing = false;
-   
-    window.timeline2.focus(0);
-    
-    document.getElementById('start-trasncript-btn').textContent = 'Start Transcription';
 }
 
 // --- Timeline Initialization and Updates ---

@@ -2,6 +2,9 @@
 
 import io
 import logging
+import os
+import tempfile
+from pathlib import Path
 
 import librosa
 import numpy as np
@@ -14,7 +17,7 @@ SAMPLING_RATE = 16000
 
 
 def load_audio_from_bytes(
-    audio_bytes: bytes, target_sr: int = SAMPLING_RATE
+    audio_bytes: bytes, target_sr: int = SAMPLING_RATE, source_name: str | None = None
 ) -> np.ndarray:
     """
     Load audio from bytes, ensuring the specified sample rate and format.
@@ -22,6 +25,7 @@ def load_audio_from_bytes(
     Args:
         audio_bytes: Raw audio data as bytes
         target_sr: Target sample rate (default: 16000 Hz)
+        source_name: Optional original file name to infer extension for fallback decoders
 
     Returns:
         Audio data as numpy array with shape (samples,) and dtype float32
@@ -29,23 +33,42 @@ def load_audio_from_bytes(
     Raises:
         ValueError: If audio cannot be loaded or processed
     """
-    try:
-        # Load audio using soundfile
-        audio, sr = sf.read(io.BytesIO(audio_bytes), dtype="float32")
-
-        # Convert stereo to mono if necessary
+    def _normalize_loaded_audio(audio: np.ndarray, sr: int) -> np.ndarray:
         if audio.ndim > 1:
             audio = audio.mean(axis=1)
-
-        # Resample if the sample rate doesn't match
         if sr != target_sr:
             audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
+        return audio.astype(np.float32)
 
-        return audio
+    try:
+        audio, sr = sf.read(io.BytesIO(audio_bytes), dtype="float32")
+        return _normalize_loaded_audio(audio, sr)
+    except Exception as primary_error:
+        # Fallback path for formats not handled directly by soundfile (e.g. some m4a/aac files).
+        logger.warning(
+            "Primary audio decode with soundfile failed, trying librosa fallback: %s",
+            primary_error,
+        )
 
-    except Exception as e:
-        logger.error(f"Error loading audio from bytes: {e}", exc_info=True)
-        raise ValueError(f"Could not load audio: {e}") from e
+        suffix = Path(source_name).suffix if source_name else ".audio"
+        temp_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(audio_bytes)
+                temp_path = tmp.name
+
+            audio, sr = librosa.load(temp_path, sr=None, mono=True)
+            return _normalize_loaded_audio(audio, sr)
+        except Exception as fallback_error:
+            logger.error(
+                "Error loading audio from bytes (fallback failed): %s",
+                fallback_error,
+                exc_info=True,
+            )
+            raise ValueError(f"Could not load audio: {fallback_error}") from fallback_error
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
 
 
 def normalize_audio(audio: np.ndarray) -> np.ndarray:
