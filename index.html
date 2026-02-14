@@ -44,6 +44,13 @@
         </div>
 
         <div class="advanced-toggle-container">
+            <label class="advanced-toggle" for="streaming-toggle-checkbox">
+                <input type="checkbox" id="streaming-toggle-checkbox" checked>
+                <span>Enable streaming updates</span>
+            </label>
+        </div>
+
+        <div class="advanced-toggle-container">
             <label class="advanced-toggle">
                 <input type="checkbox" id="advanced-toggle-checkbox">
                 <span>Advanced (JSON)</span>
@@ -61,6 +68,10 @@
     <div id="view-loading" class="view-hidden">
         <div class="spinner"></div><h2>Loading ASR Engine...</h2>
         <p id="loading-message">This may take a moment, especially on the first run.</p>
+        <div id="loading-progress-container" style="width: 200px; height: 8px; background: #eee; border-radius: 4px; margin: 10px auto; display: none;">
+            <div id="loading-progress-bar" style="width: 0%; height: 100%; background: #4CAF50; border-radius: 4px; transition: width 0.3s;"></div>
+        </div>
+        <button id="cancel-load-btn" style="padding: 8px 16px; margin-top: 10px; cursor: pointer; display: none;">Cancel</button>
     </div>
 
     <div id="view-transcription" class="view-hidden">
@@ -301,9 +312,9 @@
     </div>
 
     <!-- Script for managing audio recording -->
-    <script src="/static/scripts/audio_recording_script.js?v=10"></script>
+    <script src="/static/scripts/audio_recording_script.js?v=12"></script>
     <!-- Script for managing audio file upload -->
-    <script src="/static/scripts/audio_file_script.js?v=10" type="module"></script>
+    <script src="/static/scripts/audio_file_script.js?v=12" type="module"></script>
     <!-- Script to manage wavesufer library -->
     <script src="/static/scripts/wavesurfers.js?v=3" type="module"></script>
     <script>

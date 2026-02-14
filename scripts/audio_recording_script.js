@@ -25,6 +25,7 @@ const configTextarea = document.getElementById('config-json');
 const backendSelect = document.getElementById('backend-select');
 const modelSelect = document.getElementById('model-select');
 const languageSelect = document.getElementById('language-select');
+const streamingToggle = document.getElementById('streaming-toggle-checkbox');
 const advancedToggle = document.getElementById('advanced-toggle-checkbox');
 const advancedConfig = document.getElementById('advanced-config');
 const startButton = document.getElementById('start-button');
@@ -43,10 +44,13 @@ const defaultConfig = {
     "lan": "auto",
     "task": "transcribe",
     "backend": "whisper",
+    "enable_streaming": true,
     "min_chunk_size": 1.0,
     "buffer_trimming": "segment",
     "buffer_trimming_sec": 10.0
 };
+
+window.streamingEnabled = true;
 
 // --- Utility Functions ---
 
@@ -422,6 +426,7 @@ function buildConfigPayload() {
         "backend": backendSelect.value,
         "lan": languageSelect.value,
         "task": "transcribe",
+        "enable_streaming": streamingToggle ? streamingToggle.checked : true,
         "min_chunk_size": 1.0,
         "buffer_trimming": "segment",
         "buffer_trimming_sec": 10.0
@@ -433,7 +438,14 @@ function buildConfigPayload() {
  */
 async function pollLoadingStatus() {
     const loadingMsg = document.getElementById('loading-message');
-    const maxAttempts = 300; // 5 minutes at 1s intervals
+    const progressContainer = document.getElementById('loading-progress-container');
+    const progressBar = document.getElementById('loading-progress-bar');
+    const cancelBtn = document.getElementById('cancel-load-btn');
+
+    if (progressContainer) progressContainer.style.display = 'block';
+    if (cancelBtn) cancelBtn.style.display = 'inline-block';
+
+    const maxAttempts = 300;
     for (let i = 0; i < maxAttempts; i++) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         try {
@@ -442,11 +454,20 @@ async function pollLoadingStatus() {
             if (data.message && loadingMsg) {
                 loadingMsg.textContent = data.message;
             }
-            if (data.status === 'ready') {
+            if (data.progress !== undefined && progressBar) {
+                progressBar.style.width = (data.progress * 100) + '%';
+            }
+            if (data.status === 'ready' || data.status === 'loaded') {
+                if (cancelBtn) cancelBtn.style.display = 'none';
                 return { success: true };
             }
             if (data.status === 'error') {
+                if (cancelBtn) cancelBtn.style.display = 'none';
                 return { success: false, error: data.error };
+            }
+            if (data.status === 'cancelled') {
+                if (cancelBtn) cancelBtn.style.display = 'none';
+                return { success: false, error: 'Loading cancelled' };
             }
         } catch (e) {
             console.warn('Error polling loading status:', e);
@@ -464,6 +485,9 @@ async function loadModel() {
     let configPayload;
     try {
         configPayload = buildConfigPayload();
+        window.streamingEnabled = Boolean(
+            configPayload.enable_streaming !== false
+        );
     } catch (e) {
         alert(`Invalid JSON configuration:\n${e.message}`);
         switchView('view-model-selection');
@@ -477,6 +501,17 @@ async function loadModel() {
             body: JSON.stringify(configPayload)
         });
         if (!response.ok) {
+            if (response.status === 409) {
+                // Another load is in progress; wait on the shared loading status.
+                const result = await pollLoadingStatus();
+                if (!result.success) {
+                    throw new Error(result.error || 'Model loading failed');
+                }
+                document.title = "HISI: Live";
+                switchView('view-transcription');
+                window.createWaveSurfer();
+                return;
+            }
             const errorData = await response.json();
             throw new Error(errorData.detail || `Server error: ${response.status}`);
         }
@@ -904,9 +939,24 @@ advancedToggle.addEventListener('change', () => {
 backendSelect.addEventListener('change', updateModelDropdown);
 modelSelect.addEventListener('change', syncJsonFromDropdowns);
 languageSelect.addEventListener('change', syncJsonFromDropdowns);
+if (streamingToggle) {
+    streamingToggle.addEventListener('change', syncJsonFromDropdowns);
+}
 
 // Load Model Button
 loadModelButton.addEventListener('click', loadModel);
+
+// Cancel Load Button
+const cancelLoadBtn = document.getElementById('cancel-load-btn');
+if (cancelLoadBtn) {
+    cancelLoadBtn.addEventListener('click', async () => {
+        try {
+            await fetch('/cancel_load_model', { method: 'POST' });
+        } catch (e) {
+            console.error('Error cancelling load:', e);
+        }
+    });
+}
 
 // Start/Stop Recording Button
 startButton.addEventListener('click', () => {
@@ -914,6 +964,10 @@ startButton.addEventListener('click', () => {
         return;
     }
     if (!peerConnection || peerConnection.connectionState === "closed") {
+        if (window.streamingEnabled === false) {
+            alert('Live recording requires streaming. Enable streaming updates or use Upload Audio File mode.');
+            return;
+        }
         console.log("🐛 stop called");
         setupWebRTC();
     } else {

@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import time
 from typing import Any
 
 import numpy as np
@@ -10,6 +11,10 @@ from ..core.config import ASRConfig
 from ..core.protocols import ASRProcessor
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+handler = logging.StreamHandler()
+handler.setLevel(logging.DEBUG)
+logger.addHandler(handler)
 
 SAMPLING_RATE = 16000
 
@@ -105,6 +110,14 @@ class HypothesisBuffer:
         """Return the current buffer as complete."""
         return self.buffer
 
+    def force_commit_all(self):
+        """Force commit all words in buffer (for final output)."""
+        all_words = self.commited_in_buffer + self.buffer + self.new
+        self.commited_in_buffer = []
+        self.buffer = []
+        self.new = []
+        return all_words
+
 
 class OnlineASRProcessor(ASRProcessor):
     """
@@ -124,30 +137,18 @@ class OnlineASRProcessor(ASRProcessor):
 
     def __init__(
         self,
-        asr: Any,  # ASR backend that conforms to the expected interface
+        asr: Any,
         buffer_trimming: tuple[str, int] = ("segment", 15),
         min_chunk_sec: float = 1.0,
         logfile=sys.stderr,
     ):
-        """
-        Initialize the OnlineASRProcessor.
-
-        Args:
-            asr: An instance of an ASR backend that conforms to the expected interface.
-                 This is the model that will perform the actual speech-to-text conversion.
-            buffer_trimming: A tuple defining the strategy for trimming the audio buffer.
-                            Defaults to ("segment", 15), meaning the buffer is trimmed
-                            based on ASR segments when it exceeds 15 seconds.
-            min_chunk_sec: The minimum amount of audio in seconds that must be in the
-                          buffer before processing is attempted. Defaults to 1.0.
-            logfile: A file-like object for logging output. Defaults to sys.stderr.
-        """
         self.asr = asr
         self.logfile = logfile
         self.min_chunk_sec = min_chunk_sec
         self.buffer_trimming_way, self.buffer_trimming_sec = buffer_trimming
+        self.max_buffer_sec = 30.0
+        self.min_words_for_commit = 2
 
-        # Configuration for the fallback trimming mechanism
         self.MAX_CONSECUTIVE_ASR_FAILURES = 3
         self.FALLBACK_TRIM_THRESHOLD_SEC = 5
 
@@ -163,16 +164,24 @@ class OnlineASRProcessor(ASRProcessor):
         Args:
             offset: The initial time offset for the audio stream. Defaults to 0.0.
         """
+        logger.debug(f"[INIT] Resetting processor with offset={offset}")
         self.audio_buffer = np.array([], dtype=np.float32)
         self.transcript_buffer = HypothesisBuffer(logfile=self.logfile)
         self.buffer_time_offset = offset
         self.transcript_buffer.last_commited_time = self.buffer_time_offset
         self.commited = []
         self.consecutive_asr_failures = 0
+        logger.info(f"[INIT] Processor initialized, buffer empty")
 
     def insert_audio_chunk(self, audio: np.ndarray):
         """Append a new chunk of audio to the internal buffer."""
+        prev_len = len(self.audio_buffer)
         self.audio_buffer = np.append(self.audio_buffer, audio)
+        new_len = len(self.audio_buffer)
+        logger.debug(
+            f"[INSERT] Added {len(audio)} samples, buffer now {new_len} samples "
+            f"({new_len / self.SAMPLING_RATE:.2f}s)"
+        )
 
     def process_iter(self) -> tuple[float | None, float | None, str]:
         """
@@ -186,21 +195,44 @@ class OnlineASRProcessor(ASRProcessor):
             committed transcript segment. Returns (None, None, "") if no new
             segment is committed.
         """
-        # Stage 1: Check if there is enough audio to process.
-        if len(self.audio_buffer) / self.SAMPLING_RATE < self.min_chunk_sec:
+        iter_start = time.perf_counter()
+
+        buffer_duration = len(self.audio_buffer) / self.SAMPLING_RATE
+        if buffer_duration < self.min_chunk_sec:
+            logger.debug(
+                f"[PROCESS_ITER] Buffer too short: {buffer_duration:.2f}s < {self.min_chunk_sec}s min"
+            )
             return (None, None, "")
 
-        # Stage 2: Transcribe the audio buffer.
+        logger.debug(
+            f"[PROCESS_ITER] Processing buffer: {buffer_duration:.2f}s of audio"
+        )
+
+        asr_start = time.perf_counter()
         asr_result, asr_success = self._transcribe_audio()
+        asr_time = time.perf_counter() - asr_start
+        logger.debug(f"[PROCESS_ITER] ASR transcription took {asr_time * 1000:.1f}ms")
 
         # Stage 3: Stabilize the transcript and get the newly committed part.
+        stabilize_start = time.perf_counter()
         committed_words = self._stabilize_transcript(asr_result)
+        stabilize_time = time.perf_counter() - stabilize_start
+        logger.debug(f"[PROCESS_ITER] Stabilization took {stabilize_time * 1000:.1f}ms")
 
         # Stage 4: Manage the audio buffer based on the ASR result.
         self._manage_audio_buffer(asr_result, asr_success)
 
         # Stage 5: Format and return the output.
-        return self._format_output(committed_words)
+        output = self._format_output(committed_words)
+        total_time = time.perf_counter() - iter_start
+        logger.debug(f"[PROCESS_ITER] Total iteration took {total_time * 1000:.1f}ms")
+
+        if output[2]:
+            logger.info(
+                f"[PROCESS_ITER] Output: '{output[2][:50]}...' ({output[0]:.2f}-{output[1]:.2f})"
+            )
+
+        return output
 
     def _transcribe_audio(self) -> tuple[Any, bool]:
         """
@@ -210,11 +242,21 @@ class OnlineASRProcessor(ASRProcessor):
             A tuple containing the ASR result and a boolean indicating success.
         """
         try:
-            # Get the current prompt from the transcript buffer
             prompt = self._get_prompt()
 
-            # Call the ASR backend
-            result = self.asr.transcribe(self.audio_buffer, init_prompt=prompt)
+            audio_to_process = self.audio_buffer
+            audio_duration = len(audio_to_process) / self.SAMPLING_RATE
+
+            window_size_sec = 3.0
+            if audio_duration > window_size_sec:
+                window_samples = int(window_size_sec * self.SAMPLING_RATE)
+                audio_to_process = audio_to_process[-window_samples:]
+                logger.debug(
+                    f"[TRANSCRIBE] Processing sliding window: {window_size_sec}s "
+                    f"(buffer: {audio_duration:.1f}s)"
+                )
+
+            result = self.asr.transcribe(audio_to_process, init_prompt=prompt)
 
             self.consecutive_asr_failures = 0
             return result, True
@@ -239,14 +281,23 @@ class OnlineASRProcessor(ASRProcessor):
         if asr_result is None:
             return []
 
-        # Extract word-level timestamps from the ASR result
         words = self.asr.ts_words(asr_result)
+        logger.debug(
+            f"[STABILIZE] Got {len(words)} words from ASR: {words[:3] if words else 'none'}, buffer_offset={self.buffer_time_offset}"
+        )
 
-        # Insert the new hypothesis into the buffer
+        if not words:
+            return []
+
         self.transcript_buffer.insert(words, self.buffer_time_offset)
 
-        # Flush the buffer to get committed words
         committed_words = self.transcript_buffer.flush()
+
+        if not committed_words:
+            committed_words = list(words)
+            logger.debug(
+                f"[STABILIZE] Returning {len(committed_words)} words without stabilization"
+            )
 
         return committed_words
 
@@ -265,8 +316,17 @@ class OnlineASRProcessor(ASRProcessor):
         """
         Trim the audio buffer based on ASR segment boundaries.
         """
+        buffer_duration = len(self.audio_buffer) / self.SAMPLING_RATE
+
+        if buffer_duration > self.max_buffer_sec:
+            trim_to = max(self.buffer_trimming_sec, self.max_buffer_sec - 5)
+            self._chunk_at_timestamp(trim_to)
+            logger.debug(
+                f"[TRIM] Buffer too large ({buffer_duration:.1f}s), trimmed to {trim_to}s"
+            )
+            return
+
         try:
-            # Get segment end timestamps from the ASR result
             segment_ends = self.asr.segments_end_ts(asr_result)
 
             if (
@@ -274,7 +334,6 @@ class OnlineASRProcessor(ASRProcessor):
                 and len(self.audio_buffer) / self.SAMPLING_RATE
                 > self.buffer_trimming_sec
             ):
-                # Find the latest segment end that's within our trimming threshold
                 for end_ts in reversed(segment_ends):
                     if end_ts <= self.buffer_trimming_sec:
                         self._chunk_at_timestamp(end_ts)
@@ -283,7 +342,6 @@ class OnlineASRProcessor(ASRProcessor):
         except Exception as e:
             logger.warning(f"Failed to trim buffer by segment: {e}")
             print(asr_result)
-            # Fall back to simple trimming
             self._apply_fallback_trim(True)
 
     def _apply_fallback_trim(self, asr_success: bool):
@@ -356,17 +414,15 @@ class OnlineASRProcessor(ASRProcessor):
             A tuple containing (start_time, end_time, text) of the final segment.
         """
         if len(self.audio_buffer) > 0:
-            # Process any remaining audio
             asr_result, _ = self._transcribe_audio()
             final_words = self._stabilize_transcript(asr_result)
 
-            # Get any remaining uncommitted words
-            remaining_words = self.transcript_buffer.complete()
+            remaining_words = self.transcript_buffer.force_commit_all()
             if remaining_words:
                 final_words.extend(remaining_words)
 
-            logger.debug(f"Final, uncommitted transcript: {final_words}")
-            self.init()  # Reset for potential reuse.
+            logger.info(f"Final transcript: {final_words}")
+            self.init()
             return self._format_output(final_words)
 
         return (None, None, "")

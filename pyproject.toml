@@ -33,7 +33,7 @@ dependencies = [
     "numpy>=2.2.0,<2.3.0",
     "soundfile>=0.13.0",
     "whisper>=1.1.10",
-    "mlx-whisper>=0.4.0", # Optional, for Apple Silicon
+    "mlx-whisper>=0.4.0",
     "typer>=0.15.0",
     "rich>=14.0.0",
     "jiwer>=3.0.0",
@@ -46,7 +46,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# MLX Whisper is only available for macOS (Apple Silicon)
 mlx-whisper = [
     "mlx-whisper>=0.4.0; sys_platform == \"darwin\""
 ]

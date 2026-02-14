@@ -26,13 +26,18 @@ class ASRComponentsStore:
             "asr_processor": None,
             "sample_rate": sample_rate,
             "separator": " ",
+            "streaming_enabled": True,
             "is_ready": False,
             "current_config_id": None,
+            "loading_config_id": None,
             "loading_status": "idle",
             "loading_error": None,
             "loading_message": None,
+            "loading_progress": 0.0,
         }
         self._lock = threading.Lock()
+        self._loading_thread: threading.Thread | None = None
+        self._loading_cancelled = False
 
     @property
     def asr_processor(self) -> ASRProcessor | None:
@@ -100,6 +105,37 @@ class ASRComponentsStore:
         self._store["loading_message"] = message
 
     @property
+    def loading_progress(self) -> float:
+        """Get the loading progress (0.0 to 1.0)."""
+        return self._store.get("loading_progress", 0.0)
+
+    @loading_progress.setter
+    def loading_progress(self, progress: float) -> None:
+        """Set the loading progress (0.0 to 1.0)."""
+        self._store["loading_progress"] = max(0.0, min(1.0, progress))
+
+    def cancel_loading(self) -> bool:
+        """Cancel the current model loading if in progress."""
+        with self._lock:
+            if self._store.get("loading_status") == "loading":
+                self._loading_cancelled = True
+                self._store["loading_status"] = "cancelled"
+                self._store["loading_message"] = "Loading cancelled by user"
+                return True
+            return False
+
+    @property
+    def loading_cancelled(self) -> bool:
+        """Check if loading was cancelled."""
+        return self._loading_cancelled
+
+    def reset_loading_state(self) -> None:
+        """Reset loading state after cancellation or completion."""
+        with self._lock:
+            self._loading_cancelled = False
+            self._store["loading_progress"] = 0.0
+
+    @property
     def current_config_id(self) -> str | None:
         """Get the current configuration ID."""
         return self._store.get("current_config_id")
@@ -108,6 +144,26 @@ class ASRComponentsStore:
     def current_config_id(self, config_id: str | None) -> None:
         """Set the current configuration ID."""
         self._store["current_config_id"] = config_id
+
+    @property
+    def loading_config_id(self) -> str | None:
+        """Get the currently loading configuration ID."""
+        return self._store.get("loading_config_id")
+
+    @loading_config_id.setter
+    def loading_config_id(self, config_id: str | None) -> None:
+        """Set the currently loading configuration ID."""
+        self._store["loading_config_id"] = config_id
+
+    @property
+    def streaming_enabled(self) -> bool:
+        """Return whether streaming updates are enabled."""
+        return bool(self._store.get("streaming_enabled", True))
+
+    @streaming_enabled.setter
+    def streaming_enabled(self, enabled: bool) -> None:
+        """Enable or disable streaming updates."""
+        self._store["streaming_enabled"] = bool(enabled)
 
     def get_config_id(self, config: ASRConfig) -> str:
         """
@@ -144,8 +200,10 @@ class ASRComponentsStore:
         self._store.update(
             {
                 "asr_processor": None,
+                "streaming_enabled": True,
                 "is_ready": False,
                 "current_config_id": None,
+                "loading_config_id": None,
                 "loading_status": "idle",
                 "loading_error": None,
                 "loading_message": None,

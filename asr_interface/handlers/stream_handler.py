@@ -1,6 +1,7 @@
 """Real-time ASR stream handler for WebRTC audio processing."""
 
 import logging
+import time
 from typing import Any
 
 import librosa
@@ -11,6 +12,10 @@ from ..core.protocols import ASRProcessor
 from ..core.store import ASRComponentsStore
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+handler = logging.StreamHandler()
+handler.setLevel(logging.DEBUG)
+logger.addHandler(handler)
 
 
 class RealTimeASRHandler(StreamHandler):
@@ -34,28 +39,24 @@ class RealTimeASRHandler(StreamHandler):
             store: The shared ASR components store
             **kwargs: Additional arguments passed to StreamHandler
         """
-        # Determine the sample rate to be used by the StreamHandler base class
         rate_to_use = kwargs.pop("input_sample_rate", store.sample_rate)
         super().__init__(input_sample_rate=rate_to_use, **kwargs)
 
-        # Reference to the shared application state
         self.store = store
 
-        # Local instance of the ASR processor, pulled from the store
         self.asr_processor: ASRProcessor | None = None
 
-        # Per-connection state for managing transcription results
         self.accumulated_transcript = ""
         self.segments: list[dict[str, Any]] = []
 
-        # State for managing audio buffering (optional, for potential future use like playback)
         self.full_audio = np.zeros((0,), dtype=np.float32)
 
-        # State to track the configuration version and prevent re-initialization
         self.last_used_config_id: str | None = None
 
-        # Unique identifier for this handler instance for clear logging
         self.handler_id = id(self)
+
+        self._last_process_time = 0.0
+        self._process_interval = 0.3
 
         logger.info(
             f"Handler instance [{self.handler_id}] created. Waiting for processor."
@@ -115,6 +116,7 @@ class RealTimeASRHandler(StreamHandler):
         Args:
             frame: A tuple containing sample rate and PCM audio data
         """
+        receive_start = time.perf_counter()
         self._ensure_processor()
         if not self.asr_processor:
             return
@@ -131,7 +133,14 @@ class RealTimeASRHandler(StreamHandler):
                 audio_float32, orig_sr=sample_rate, target_sr=target_sr
             )
 
+        audio_len = len(audio_float32)
         self.asr_processor.insert_audio_chunk(audio_float32.flatten())
+
+        receive_time = time.perf_counter() - receive_start
+        logger.debug(
+            f"[RECEIVE] Handler {self.handler_id}: received {audio_len} samples "
+            f"({audio_len / target_sr * 1000:.1f}ms), processing took {receive_time * 1000:.1f}ms"
+        )
 
     def emit(self) -> AdditionalOutputs:
         """
@@ -142,18 +151,37 @@ class RealTimeASRHandler(StreamHandler):
         Returns:
             AdditionalOutputs: A data structure containing the full transcript and segments
         """
+        current_time = time.perf_counter()
+        time_since_last_process = current_time - self._last_process_time
+
         if not self.asr_processor:
+            logger.debug(
+                f"[EMIT] Handler {self.handler_id}: no processor, returning empty"
+            )
             return AdditionalOutputs("", np.array([], dtype=np.float32), [])
 
+        if time_since_last_process < self._process_interval:
+            return AdditionalOutputs(
+                self.accumulated_transcript, self.full_audio, self.segments
+            )
+
+        self._last_process_time = current_time
+        emit_start = time.perf_counter()
+
         processed_output = self.asr_processor.process_iter()
+        emit_time = time.perf_counter() - emit_start
+
         if processed_output is None:
-            # No new segment, just return the current state
             return AdditionalOutputs(
                 self.accumulated_transcript, self.full_audio, self.segments
             )
 
         beg, end, text_delta = processed_output
         if text_delta:
+            logger.debug(
+                f"[EMIT] Handler {self.handler_id}: NEW SEGMENT '{text_delta[:30]}...' "
+                f"({beg:.2f}s-{end:.2f}s)"
+            )
             self.segments.append({"start": beg, "end": end, "text": text_delta})
 
             # Correctly append the new text delta with a separator

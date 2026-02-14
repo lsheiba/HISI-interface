@@ -6,12 +6,16 @@ import logging
 import threading
 from typing import Any
 
+logging.getLogger("asr_interface").setLevel(logging.DEBUG)
+logging.getLogger("asr_interface.handlers").setLevel(logging.DEBUG)
+logging.getLogger("asr_interface.backends").setLevel(logging.DEBUG)
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import Response
 from fastrtc import Stream
 from jiwer import cer, wer
+from starlette.responses import Response
 
 from ..backends.registry import MODEL_LOADERS, get_loader
 from ..core.config import ASRConfig, TURNConfig
@@ -20,6 +24,13 @@ from ..core.store import ASRComponentsStore
 from ..handlers.stream_handler import RealTimeASRHandler
 from ..utils.audio import SAMPLING_RATE, load_audio_from_bytes
 from ..utils.turn_server import get_rtc_credentials
+from .streaming import (
+    StreamEventPayload,
+    format_sse_event,
+    stream_realtime_transcript,
+    stream_upload_transcript,
+    transcribe_audio_in_chunks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,13 +147,19 @@ class ASRServer:
                 return {"status": "success", "message": "Processor is already loaded."}
 
             if self.store.loading_status == "loading":
+                if self.store.loading_config_id == config_id:
+                    return {
+                        "status": "loading",
+                        "message": "This model configuration is already loading.",
+                    }
                 raise HTTPException(
                     status_code=409,
-                    detail="A model is already being loaded. Check /loading_status.",
+                    detail="A different model is already being loaded. Check /loading_status.",
                 )
 
             logger.info(f"Request to create processor for new config: {config}")
             self.store.loading_status = "loading"
+            self.store.loading_config_id = config_id
             self.store.loading_error = None
 
             thread = threading.Thread(
@@ -154,13 +171,23 @@ class ASRServer:
 
             return {"status": "loading", "message": "Model loading started."}
 
+        @self.app.post("/cancel_load_model")
+        async def cancel_load_model():
+            """Cancel the current model loading if in progress."""
+            if self.store.cancel_loading():
+                logger.info("Model loading cancelled by user")
+                return {"status": "cancelled", "message": "Model loading cancelled."}
+            return {"status": "idle", "message": "No model loading in progress."}
+
         @self.app.get("/loading_status")
         async def loading_status():
             """Get the current model loading status."""
             return {
                 "status": self.store.loading_status,
+                "loading_config_id": self.store.loading_config_id,
                 "error": self.store.loading_error,
                 "message": self.store.loading_message,
+                "progress": self.store.loading_progress,
             }
 
         @self.app.get("/backends")
@@ -182,6 +209,12 @@ class ASRServer:
             )
 
             audio_bytes = await audio_file.read()
+            try:
+                audio = load_audio_from_bytes(
+                    audio_bytes, source_name=audio_file.filename
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
 
             processor_template = self.store.asr_processor
             if not processor_template:
@@ -195,33 +228,60 @@ class ASRServer:
             upload_processor = self._create_upload_processor(processor_template)
 
             async def transcription_generator():
-                """Generate transcription results."""
-                current_full_transcript = []
+                """Generate transcription results as SSE."""
                 try:
-                    async for result in self._transcribe_audio_in_chunks(
-                        upload_processor, audio_bytes
-                    ):
-                        data = json.loads(result)
-                        if "text" in data:
-                            current_full_transcript.append(data["text"])
-                            payload = {
-                                "full_transcript": " ".join(current_full_transcript),
-                                "segments": [
-                                    {
-                                        "start": data.get("start", 0),
-                                        "end": data.get("end", 0),
-                                        "text": data["text"],
-                                    }
-                                ],
-                                "timestamp": data.get("end", 0),
-                            }
-                            yield f"event: output\ndata: {json.dumps(payload)}\n\n"
+                    if self.store.streaming_enabled:
+                        async for frame in stream_upload_transcript(
+                            processor=upload_processor,
+                            audio=audio,
+                            sample_rate=SAMPLING_RATE,
+                        ):
+                            yield frame
+                    else:
+                        transcript_parts: list[str] = []
+                        all_segments = []
+                        async for result in transcribe_audio_in_chunks(
+                            processor=upload_processor,
+                            audio=audio,
+                            sample_rate=SAMPLING_RATE,
+                        ):
+                            text = str(result.get("text", "")).strip()
+                            if text:
+                                transcript_parts.append(text)
+                            all_segments.append(
+                                {
+                                    "start": float(result.get("start", 0)),
+                                    "end": float(result.get("end", 0)),
+                                    "text": text,
+                                }
+                            )
+
+                        yield format_sse_event(
+                            "output",
+                            StreamEventPayload(
+                                full_transcript=" ".join(transcript_parts),
+                                segments=all_segments,
+                                final=True,
+                                status="completed",
+                            ),
+                        )
+                        yield format_sse_event(
+                            "final",
+                            StreamEventPayload(
+                                full_transcript=" ".join(transcript_parts),
+                                final=True,
+                                status="completed",
+                            ),
+                        )
                 except Exception as e:
                     logger.error(
                         f"Error during uploaded file transcription stream: {e}",
                         exc_info=True,
                     )
-                    yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+                    yield format_sse_event(
+                        "error",
+                        StreamEventPayload(error=str(e), status="error", final=True),
+                    )
                 finally:
                     logger.info(
                         f"Finished processing uploaded file: {audio_file.filename}"
@@ -254,16 +314,15 @@ class ASRServer:
             try:
                 # Transcribe the audio
                 transcript_parts = []
-                async for result in self._transcribe_audio_in_chunks(
-                    upload_processor, audio_bytes
+                audio = load_audio_from_bytes(audio_bytes, source_name=audio.filename)
+                async for result in transcribe_audio_in_chunks(
+                    processor=upload_processor,
+                    audio=audio,
+                    sample_rate=SAMPLING_RATE,
                 ):
-                    # Parse the result and extract transcript
-                    if isinstance(result, str) and result.startswith("data: "):
-                        import json
-
-                        data = json.loads(result[6:])
-                        if "text" in data:
-                            transcript_parts.append(data["text"])
+                    text = str(result.get("text", "")).strip()
+                    if text:
+                        transcript_parts.append(text)
 
                 full_transcript = " ".join(transcript_parts)
 
@@ -282,7 +341,7 @@ class ASRServer:
                 logger.error(f"Error during evaluation: {e}", exc_info=True)
                 raise HTTPException(
                     status_code=500, detail=f"Evaluation failed: {str(e)}"
-                )
+                ) from e
 
         @self.app.post("/reset_handler")
         async def reset_handler():
@@ -322,19 +381,37 @@ class ASRServer:
             logger.debug(f"New transcript stream request for {webrtc_id}")
 
             async def output_stream_generator():
+                if not self.store.streaming_enabled:
+                    yield format_sse_event(
+                        "error",
+                        StreamEventPayload(
+                            webrtc_id=webrtc_id,
+                            error="Streaming is disabled for this model configuration.",
+                            status="error",
+                            final=True,
+                        ),
+                    )
+                    return
                 try:
-                    async for output in self.stream.output_stream(webrtc_id):
-                        payload = {
-                            "full_transcript": output.args[0],
-                            "segments": output.args[2],
-                        }
-                        yield f"event: output\ndata: {json.dumps(payload)}\n\n"
+                    async for frame in stream_realtime_transcript(
+                        self.stream, webrtc_id
+                    ):
+                        yield frame
                 except asyncio.CancelledError:
                     logger.info(f"Transcript stream for {webrtc_id} disconnected.")
                 except Exception as e:
                     logger.error(
                         f"Error in transcript stream for {webrtc_id}: {e}",
                         exc_info=True,
+                    )
+                    yield format_sse_event(
+                        "error",
+                        StreamEventPayload(
+                            webrtc_id=webrtc_id,
+                            error=str(e),
+                            status="error",
+                            final=True,
+                        ),
                     )
 
             return StreamingResponse(
@@ -349,18 +426,39 @@ class ASRServer:
             self.store.loading_message = (
                 f"Downloading and loading model: {config.model}"
             )
+            self.store.loading_progress = 0.1
 
             loader = get_loader(config.backend)
 
             self.store.loading_message = f"Loading model weights: {config.model}"
+            self.store.loading_progress = 0.3
+
+            if self.store.loading_cancelled:
+                logger.info(
+                    f"Model loading cancelled before load for config '{config_id}'"
+                )
+                return
+
             online_processor, metadata = loader.load(config)
+
+            if self.store.loading_cancelled:
+                logger.info(
+                    f"Model loading cancelled after load for config '{config_id}'"
+                )
+                return
+
+            self.store.loading_progress = 0.9
 
             self.store.asr_processor = online_processor
             self.store.separator = metadata.get("separator", " ")
+            self.store.streaming_enabled = config.enable_streaming
             self.store.is_ready = True
             self.store.current_config_id = config_id
             self.store.loading_status = "ready"
+            self.store.loading_config_id = None
             self.store.loading_message = None
+            self.store.loading_progress = 1.0
+            self.store.reset_loading_state()
 
             if config.turn_config:
                 self.rtc_config = self._get_rtc_configuration(config.turn_config)
@@ -375,8 +473,11 @@ class ASRServer:
                 f"Fatal error during ASR processor creation: {e}", exc_info=True
             )
             self.store.loading_status = "error"
+            self.store.loading_config_id = None
             self.store.loading_error = str(e)
             self.store.loading_message = None
+            self.store.loading_progress = 0.0
+            self.store.reset_loading_state()
 
     def _create_upload_processor(
         self, processor_template: ASRProcessor
@@ -398,53 +499,6 @@ class ASRServer:
 
         # Mount the fastRTC stream
         self.stream.mount(self.app)
-
-    async def _transcribe_audio_in_chunks(
-        self, processor: ASRProcessor, audio_bytes: bytes
-    ):
-        """
-        Transcribe audio in chunks using the processor and yield flushed segments.
-
-        Args:
-            processor: The ASR processor to use
-            audio_bytes: The audio data to transcribe
-
-        Yields:
-            JSON strings containing transcription results
-        """
-        audio = load_audio_from_bytes(audio_bytes)
-
-        # Reset processor's internal state for this new file
-        processor.init(offset=0)
-
-        chunk_size_seconds = getattr(processor, "min_chunk_sec", 1.0)
-        samples_per_chunk = int(chunk_size_seconds * SAMPLING_RATE)
-
-        for i in range(0, len(audio), samples_per_chunk):
-            chunk = audio[i : i + samples_per_chunk]
-
-            processor.insert_audio_chunk(chunk)
-
-            processed_output = processor.process_iter()
-            if processed_output and processed_output[2]:
-                beg, end, text = processed_output
-                result = {"start": beg, "end": end, "text": text, "segment": True}
-                yield json.dumps(result)
-
-            await asyncio.sleep(0.001)
-
-        # Flush any remaining buffered text at the end
-        final_flush_output = processor.finish()
-        if final_flush_output and final_flush_output[2]:
-            beg, end, text = final_flush_output
-            result = {
-                "start": beg,
-                "end": end,
-                "text": text,
-                "segment": True,
-                "final": True,
-            }
-            yield json.dumps(result)
 
 
 def create_app(store: ASRComponentsStore | None = None) -> FastAPI:
