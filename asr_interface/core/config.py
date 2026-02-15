@@ -24,6 +24,27 @@ class TURNConfig(BaseModel):
     )
 
 
+class DiarizationConfig(BaseModel):
+    """Configuration for speaker diarization."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable speaker diarization",
+    )
+    backend: Literal["pyanote"] = Field(
+        default="pyanote",
+        description="Diarization backend to use",
+    )
+    min_speakers: int = Field(
+        default=1,
+        description="Minimum number of speakers",
+    )
+    max_speakers: int = Field(
+        default=10,
+        description="Maximum number of speakers",
+    )
+
+
 class ASRConfig(BaseModel):
     """Configuration for ASR model loading and processing."""
 
@@ -63,6 +84,9 @@ class ASRConfig(BaseModel):
     vad: bool = Field(default=False, description="Enable Voice Activity Detection")
     turn_config: TURNConfig | None = Field(
         default=None, description="TURN server configuration"
+    )
+    diarization: DiarizationConfig | None = Field(
+        default=None, description="Speaker diarization configuration"
     )
 
     class Config:

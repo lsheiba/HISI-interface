@@ -26,6 +26,7 @@ const backendSelect = document.getElementById('backend-select');
 const modelSelect = document.getElementById('model-select');
 const languageSelect = document.getElementById('language-select');
 const streamingToggle = document.getElementById('streaming-toggle-checkbox');
+const diarizationToggle = document.getElementById('diarization-toggle-checkbox');
 const advancedToggle = document.getElementById('advanced-toggle-checkbox');
 const advancedConfig = document.getElementById('advanced-config');
 const startButton = document.getElementById('start-button');
@@ -47,10 +48,15 @@ const defaultConfig = {
     "enable_streaming": true,
     "min_chunk_size": 1.0,
     "buffer_trimming": "segment",
-    "buffer_trimming_sec": 10.0
+    "buffer_trimming_sec": 10.0,
+    "diarization": {
+        "enabled": false,
+        "backend": "pyanote"
+    }
 };
 
 window.streamingEnabled = true;
+window.diarizationEnabled = false;
 
 // --- Utility Functions ---
 
@@ -421,7 +427,7 @@ function buildConfigPayload() {
     if (advancedToggle.checked && configTextarea.value.trim()) {
         return JSON.parse(configTextarea.value);
     }
-    return {
+    const config = {
         "model": modelSelect.value,
         "backend": backendSelect.value,
         "lan": languageSelect.value,
@@ -429,8 +435,17 @@ function buildConfigPayload() {
         "enable_streaming": streamingToggle ? streamingToggle.checked : true,
         "min_chunk_size": 1.0,
         "buffer_trimming": "segment",
-        "buffer_trimming_sec": 10.0
+        "buffer_trimming_sec": 10.0,
     };
+    
+    if (diarizationToggle && diarizationToggle.checked) {
+        config.diarization = {
+            "enabled": true,
+            "backend": "pyanote"
+        };
+    }
+    
+    return config;
 }
 
 /**
@@ -487,6 +502,9 @@ async function loadModel() {
         configPayload = buildConfigPayload();
         window.streamingEnabled = Boolean(
             configPayload.enable_streaming !== false
+        );
+        window.diarizationEnabled = Boolean(
+            configPayload.diarization?.enabled === true
         );
     } catch (e) {
         alert(`Invalid JSON configuration:\n${e.message}`);
@@ -707,10 +725,18 @@ function handleServerUpdate(data) {
         segments.forEach(segment => {
             const row = document.createElement('tr');
             const duration = segment.end - segment.start;
+            
+            let speakerCell = '';
+            if (window.diarizationEnabled && segment.speaker) {
+                const speakerClass = segment.speaker.toLowerCase().replace(/\s+/g, '-');
+                speakerCell = `<td class="speaker-cell speaker-${speakerClass}">${segment.speaker}</td>`;
+            }
+            
             row.innerHTML = `
                 <td class="time-cell">${formatTime(segment.start)}</td>
                 <td class="time-cell">${formatTime(segment.end)}</td>
                 <td class="duration-cell">${formatDuration(duration)}</td>
+                ${speakerCell}
                 <td style="max-width: 300px; word-wrap: break-word;">${segment.text}</td>
                 <td>
                     <div class="segment-actions">

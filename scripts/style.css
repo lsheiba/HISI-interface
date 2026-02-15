@@ -265,7 +265,45 @@ body {
 }
 
 .segments-table tr:nth-child(even):hover {
-    background-color: #f8f9fa;
+    background-color: #f0f0f0;
+}
+
+/* Speaker colors for diarization */
+.speaker-cell {
+    font-weight: bold;
+    padding: 4px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.speaker-speaker_1, .speaker-speaker-1 {
+    background-color: #FF5733;
+    color: white;
+}
+
+.speaker-speaker_2, .speaker-speaker-2 {
+    background-color: #33FF57;
+    color: black;
+}
+
+.speaker-speaker_3, .speaker-speaker-3 {
+    background-color: #3357FF;
+    color: white;
+}
+
+.speaker-speaker_4, .speaker-speaker-4 {
+    background-color: #FF33F5;
+    color: white;
+}
+
+.speaker-speaker_5, .speaker-speaker-5 {
+    background-color: #FF8C33;
+    color: white;
+}
+
+.speaker-speaker_6, .speaker-speaker-6 {
+    background-color: #33FFF5;
+    color: black;
 }
 
 .segment-btn.segment-play {

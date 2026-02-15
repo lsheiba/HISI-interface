@@ -43,14 +43,16 @@ dependencies = [
     "aiofiles>=24.1.0",
     "openai-whisper>=20250625",
     "av>=15.1.0",
+    "mlx-audio>=0.3.1",
+    "pyannote-audio>=4.0.4",
 ]
 
 [project.optional-dependencies]
-mlx-whisper = [
-    "mlx-whisper>=0.4.0; sys_platform == \"darwin\""
-]
 mlx-audio = [
     "mlx-audio>=0.3.0; sys_platform == \"darwin\""
+]
+pyanote = [
+    "pyannote-audio>=3.0.0",
 ]
 dev = [
     "pytest>=7.4.0",

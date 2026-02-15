@@ -19,6 +19,7 @@ class SegmentPayload(BaseModel):
     start: float
     end: float
     text: str
+    speaker: str | None = None
 
 
 class StreamEventPayload(BaseModel):
@@ -73,6 +74,7 @@ async def transcribe_audio_in_chunks(
     audio: Any,
     sample_rate: int,
     chunk_size_seconds: float | None = None,
+    diarization_processor: Any = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """
     Chunk and transcribe a single audio array, yielding segment dictionaries.
@@ -89,15 +91,39 @@ async def transcribe_audio_in_chunks(
         processed_output = await asyncio.to_thread(processor.process_iter)
         if processed_output and processed_output[2]:
             beg, end, text = processed_output
-            yield {"start": beg, "end": end, "text": text, "final": False}
+            segment = {"start": beg, "end": end, "text": text, "final": False}
 
-        # Ensure the event loop stays responsive during long uploads.
+            if diarization_processor and diarization_processor.is_enabled:
+                try:
+                    audio_segment = audio[i : i + samples_per_chunk]
+                    speaker_segments = diarization_processor.process_audio(
+                        audio_segment, sample_rate
+                    )
+                    if speaker_segments:
+                        segment["speaker"] = speaker_segments[0].speaker
+                except Exception:
+                    pass
+
+            yield segment
+
         await asyncio.sleep(0)
 
     final_flush_output = await asyncio.to_thread(processor.finish)
     if final_flush_output and final_flush_output[2]:
         beg, end, text = final_flush_output
-        yield {"start": beg, "end": end, "text": text, "final": True}
+        segment = {"start": beg, "end": end, "text": text, "final": True}
+
+        if diarization_processor and diarization_processor.is_enabled:
+            try:
+                speaker_segments = diarization_processor.process_audio(
+                    audio, sample_rate
+                )
+                if speaker_segments:
+                    segment["speaker"] = speaker_segments[0].speaker
+            except Exception:
+                pass
+
+        yield segment
 
 
 async def stream_upload_transcript(
@@ -105,6 +131,7 @@ async def stream_upload_transcript(
     audio: Any,
     sample_rate: int,
     chunk_size_seconds: float | None = None,
+    diarization_processor: Any = None,
 ) -> AsyncIterator[str]:
     """
     Stream upload transcription as SSE frames using the shared event schema.
@@ -116,6 +143,7 @@ async def stream_upload_transcript(
         audio=audio,
         sample_rate=sample_rate,
         chunk_size_seconds=chunk_size_seconds,
+        diarization_processor=diarization_processor,
     ):
         text = str(result.get("text", "")).strip()
         if text:
@@ -128,6 +156,7 @@ async def stream_upload_transcript(
                     start=float(result.get("start", 0)),
                     end=float(result.get("end", 0)),
                     text=text,
+                    speaker=result.get("speaker"),
                 )
             ],
             final=bool(result.get("final", False)),

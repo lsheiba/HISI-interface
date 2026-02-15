@@ -34,6 +34,8 @@ class ASRComponentsStore:
             "loading_error": None,
             "loading_message": None,
             "loading_progress": 0.0,
+            "diarization_enabled": False,
+            "diarization_processor": None,
         }
         self._lock = threading.Lock()
         self._loading_thread: threading.Thread | None = None
@@ -164,6 +166,26 @@ class ASRComponentsStore:
     def streaming_enabled(self, enabled: bool) -> None:
         """Enable or disable streaming updates."""
         self._store["streaming_enabled"] = bool(enabled)
+
+    @property
+    def diarization_enabled(self) -> bool:
+        """Return whether diarization is enabled."""
+        return bool(self._store.get("diarization_enabled", False))
+
+    @diarization_enabled.setter
+    def diarization_enabled(self, enabled: bool) -> None:
+        """Enable or disable diarization."""
+        self._store["diarization_enabled"] = bool(enabled)
+
+    @property
+    def diarization_processor(self):
+        """Get the diarization processor."""
+        return self._store.get("diarization_processor")
+
+    @diarization_processor.setter
+    def diarization_processor(self, processor) -> None:
+        """Set the diarization processor."""
+        self._store["diarization_processor"] = processor
 
     def get_config_id(self, config: ASRConfig) -> str:
         """

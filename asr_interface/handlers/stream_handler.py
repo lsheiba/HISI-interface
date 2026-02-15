@@ -8,6 +8,7 @@ import librosa
 import numpy as np
 from fastrtc import AdditionalOutputs, StreamHandler
 
+from ..backends.diarization import SpeakerSegment
 from ..core.protocols import ASRProcessor
 from ..core.store import ASRComponentsStore
 
@@ -58,6 +59,10 @@ class RealTimeASRHandler(StreamHandler):
         self._last_process_time = 0.0
         self._process_interval = 0.3
 
+        self._diarization_enabled = False
+        self._speaker_segments: list[SpeakerSegment] = []
+        self._audio_for_diarization: np.ndarray | None = None
+
         logger.info(
             f"Handler instance [{self.handler_id}] created. Waiting for processor."
         )
@@ -90,12 +95,13 @@ class RealTimeASRHandler(StreamHandler):
             )
             self.asr_processor = self.store.asr_processor
             self.last_used_config_id = config_id
+            self._diarization_enabled = self.store.diarization_enabled
             self._reset_instance_state()
             logger.info(
-                f"Handler [{self.handler_id}] - Processor acquired and reset successfully."
+                f"Handler [{self.handler_id}] - Processor acquired and reset successfully. "
+                f"Diarization enabled: {self._diarization_enabled}"
             )
         else:
-            # If no processor is ready, ensure we don't hold onto an old one
             self.asr_processor = None
 
     def _reset_instance_state(self) -> None:
@@ -104,6 +110,8 @@ class RealTimeASRHandler(StreamHandler):
         self.accumulated_transcript = ""
         self.segments = []
         self.full_audio = np.zeros((0,), dtype=np.float32)
+        self._audio_for_diarization = None
+        self._speaker_segments = []
         self.asr_processor.init(offset=0.0)
 
     def receive(self, frame: tuple[int, np.ndarray]) -> None:
@@ -166,10 +174,8 @@ class RealTimeASRHandler(StreamHandler):
             )
 
         self._last_process_time = current_time
-        emit_start = time.perf_counter()
 
         processed_output = self.asr_processor.process_iter()
-        emit_time = time.perf_counter() - emit_start
 
         if processed_output is None:
             return AdditionalOutputs(
@@ -182,7 +188,33 @@ class RealTimeASRHandler(StreamHandler):
                 f"[EMIT] Handler {self.handler_id}: NEW SEGMENT '{text_delta[:30]}...' "
                 f"({beg:.2f}s-{end:.2f}s)"
             )
-            self.segments.append({"start": beg, "end": end, "text": text_delta})
+
+            segment_data = {"start": beg, "end": end, "text": text_delta}
+
+            if self._diarization_enabled and self.store.diarization_processor:
+                diarization_proc = self.store.diarization_processor
+                if diarization_proc.is_enabled and len(self.full_audio) > 0:
+                    sample_rate = self.store.sample_rate
+                    if self._audio_for_diarization is None:
+                        self._audio_for_diarization = self.full_audio.copy()
+                    else:
+                        self._audio_for_diarization = np.concatenate(
+                            [self._audio_for_diarization, self.full_audio]
+                        )
+
+                    if len(self._audio_for_diarization) > 0:
+                        try:
+                            speaker_segments = diarization_proc.process_audio(
+                                self._audio_for_diarization, sample_rate
+                            )
+                            self._speaker_segments = speaker_segments
+
+                            if speaker_segments:
+                                segment_data["speaker"] = speaker_segments[0].speaker
+                        except Exception as e:
+                            logger.warning(f"Diarization failed: {e}")
+
+            self.segments.append(segment_data)
 
             # Correctly append the new text delta with a separator
             separator = self.store.separator
