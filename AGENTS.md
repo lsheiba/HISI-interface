@@ -1,5 +1,10 @@
 # Repository Guidelines
 
+## Working Rules
+- **DO NOT commit and push changes without explicit approval from Leonard**
+- Always ask for approval before committing changes
+- Only commit after receiving explicit "yes" or "go ahead" from Leonard
+
 ## Project Structure & Module Organization
 - `asr_interface/`: main Python package.
 - `asr_interface/core`: shared protocols, config, and state store.

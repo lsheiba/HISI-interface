@@ -644,10 +644,9 @@ async function populateBackendDropdowns() {
 
         applySavedConfig();
         
+        // Don't call updateModelDropdown again - applySavedConfig already handled it
         if (backendsData.length > 0 && !backendSelect.value) {
             backendSelect.value = backendsData[0].id;
-            updateModelDropdown();
-        } else if (backendSelect.value) {
             updateModelDropdown();
         }
     } catch (e) {
