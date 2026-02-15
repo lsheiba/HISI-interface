@@ -445,7 +445,81 @@ function buildConfigPayload() {
         };
     }
     
+    saveConfigToLocalStorage(config);
+    
     return config;
+}
+
+/**
+ * Save configuration to localStorage.
+ */
+function saveConfigToLocalStorage(config) {
+    try {
+        const saveConfig = {
+            model: config.model,
+            backend: config.backend,
+            lan: config.lan,
+            enable_streaming: config.enable_streaming,
+            enable_diarization: config.diarization ? config.diarization.enabled : false,
+        };
+        localStorage.setItem('asr_config', JSON.stringify(saveConfig));
+    } catch (e) {
+        console.warn('Could not save config to localStorage:', e);
+    }
+}
+
+/**
+ * Load configuration from localStorage.
+ */
+function loadConfigFromLocalStorage() {
+    try {
+        const saved = localStorage.getItem('asr_config');
+        if (saved) {
+            return JSON.parse(saved);
+        }
+    } catch (e) {
+        console.warn('Could not load config from localStorage:', e);
+    }
+    return null;
+}
+
+/**
+ * Apply saved configuration to UI elements.
+ */
+function applySavedConfig() {
+    const saved = loadConfigFromLocalStorage();
+    if (!saved) return;
+    
+    if (saved.backend && backendSelect) {
+        backendSelect.value = saved.backend;
+        const selectedBackend = backendsData.find(b => b.id === saved.backend);
+        if (selectedBackend) {
+            modelSelect.innerHTML = '';
+            modelSelect.disabled = false;
+            selectedBackend.models.forEach(model => {
+                const opt = document.createElement('option');
+                opt.value = model.id;
+                opt.textContent = model.name || model.id;
+                modelSelect.appendChild(opt);
+                
+                if (saved.model && model.id === saved.model) {
+                    opt.selected = true;
+                }
+            });
+        }
+    }
+    
+    if (saved.lan && languageSelect) {
+        languageSelect.value = saved.lan;
+    }
+    
+    if (saved.enable_streaming !== undefined && streamingToggle) {
+        streamingToggle.checked = saved.enable_streaming;
+    }
+    
+    if (saved.enable_diarization !== undefined && diarizationToggle) {
+        diarizationToggle.checked = saved.enable_diarization;
+    }
 }
 
 /**
@@ -1031,6 +1105,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateButtonState(); // Set initial button state
     showResetButtonIfNeeded(); // Set initial reset button visibility
     populateBackendDropdowns(); // Populate backend/model dropdowns from server
+    applySavedConfig(); // Restore saved config from localStorage
 });
 
 window.showResetButtonIfNeeded = showResetButtonIfNeeded;
