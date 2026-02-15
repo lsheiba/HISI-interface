@@ -144,9 +144,16 @@
 
                     <!-- Transcript Box -->
                     <div class="waveform-container">
-                        <p class="badge">Transcript</p>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <span style="font-weight: bold; color: #333; font-size: 14px;">Transcript</span>
+                            <button class="transcript-expand-btn" id="transcript-toggle-recording" title="Expand/Collapse">▼</button>
+                        </div>
                         <div class="transcript-container" id="transcript-container-recording">
                             <p id="transcript-text">Speak to see transcript...</p>
+                        </div>
+                        <div class="speaker-legend" id="speaker-legend-recording" style="display: none;">
+                            <span class="speaker-legend-title">Speakers:</span>
+                            <div class="speaker-legend-items" id="speaker-legend-items-recording"></div>
                         </div>
                     </div>
 
@@ -273,9 +280,16 @@
 
                     <!-- Transcript Box -->
                     <div class="waveform-container">
-                        <p class="badge">Transcript</p>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <span style="font-weight: bold; color: #333; font-size: 14px;">Transcript</span>
+                            <button class="transcript-expand-btn" id="transcript-toggle-upload" title="Expand/Collapse">▼</button>
+                        </div>
                         <div class="transcript-container" id="transcript-container">
                             <p id="output">Upload a file to see transcript...</p>
+                        </div>
+                        <div class="speaker-legend" id="speaker-legend-upload" style="display: none;">
+                            <span class="speaker-legend-title">Speakers:</span>
+                            <div class="speaker-legend-items" id="speaker-legend-items-upload"></div>
                         </div>
                     </div>
 
@@ -318,7 +332,7 @@
     </div>
 
     <!-- Script for managing audio recording -->
-    <script src="/static/scripts/audio_recording_script.js?v=12"></script>
+    <script src="/static/scripts/audio_recording_script.js?v=14"></script>
     <!-- Script for managing audio file upload -->
     <script src="/static/scripts/audio_file_script.js?v=12" type="module"></script>
     <!-- Script to manage wavesufer library -->

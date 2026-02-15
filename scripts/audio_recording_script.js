@@ -390,6 +390,8 @@ function initTimeline() {
  * @param {Array<Object>} segments - An array of segment objects.
  */
 function updateTimeline(segments) {
+    console.log('updateTimeline called with', segments?.length, 'segments');
+    console.log('timelineItems:', !!timelineItems, 'timeline:', !!timeline);
     if (!timelineItems || !timeline) {
         console.warn("Timeline not initialized properly. Cannot update.");
         return;
@@ -398,6 +400,7 @@ function updateTimeline(segments) {
     timelineItems.clear(); // Clear existing items
 
     if (segments && segments.length > 0) {
+        console.log('Adding', segments.length, 'segments to timeline');
         segments.forEach((segment, idx) => {
             timelineItems.add({
                 id: idx,
@@ -413,6 +416,7 @@ function updateTimeline(segments) {
                 max: lastSegment.end * 1000 + 1000,
             });
         }
+        console.log('Timeline items after add:', timelineItems.length);
     } 
 
     window.segments = segments; 
@@ -781,8 +785,10 @@ function waitForIceGatheringComplete(pc) {
  * @param {string} data - JSON string containing transcription payload.
  */
 function handleServerUpdate(data) {
+    console.log('handleServerUpdate called with data length:', data?.length);
     try {
         const payload = JSON.parse(data);
+        console.log('Payload received:', { fullTranscript: payload.full_transcript?.length, segmentsCount: payload.segments?.length });
         transcriptTextElement.textContent = historicalTranscript + (payload.full_transcript || "");
         document.getElementById('transcript-container').scrollTop = document.getElementById('transcript-container').scrollHeight;
 
@@ -834,11 +840,44 @@ function handleServerUpdate(data) {
             });
         });
 
-        updateTimeline(segments);
+        try {
+            updateTimeline(segments);
+        } catch (e) {
+            console.error("Error calling updateTimeline:", e);
+        }
         showResetButtonIfNeeded();
+        
+        if (window.diarizationEnabled) {
+            updateSpeakerLegend(segments);
+        }
 
     } catch (e) {
         console.error("Failed to parse server data:", data, e);
+    }
+}
+
+function updateSpeakerLegend(segments) {
+    const uniqueSpeakers = new Set();
+    segments.forEach(seg => {
+        if (seg.speaker) uniqueSpeakers.add(seg.speaker);
+    });
+    
+    const legendItems = document.getElementById('speaker-legend-items-recording');
+    const legendContainer = document.getElementById('speaker-legend-recording');
+    if (!legendItems || !legendContainer) return;
+    
+    if (uniqueSpeakers.size > 0) {
+        legendContainer.style.display = 'flex';
+        legendItems.innerHTML = '';
+        uniqueSpeakers.forEach(speaker => {
+            const speakerClass = speaker.toLowerCase().replace(/\s+/g, '-');
+            const item = document.createElement('span');
+            item.className = `speaker-legend-item speaker-${speakerClass}`;
+            item.textContent = speaker;
+            legendItems.appendChild(item);
+        });
+    } else {
+        legendContainer.style.display = 'none';
     }
 }
 
@@ -1108,6 +1147,16 @@ document.addEventListener('DOMContentLoaded', () => {
     updateButtonState();
     showResetButtonIfNeeded();
     populateBackendDropdowns();
+    
+    // Transcript expand/collapse toggle
+    const toggleBtn = document.getElementById('transcript-toggle-recording');
+    const transcriptContainer = document.getElementById('transcript-container-recording');
+    if (toggleBtn && transcriptContainer) {
+        toggleBtn.addEventListener('click', () => {
+            transcriptContainer.classList.toggle('collapsed');
+            toggleBtn.textContent = transcriptContainer.classList.contains('collapsed') ? '▶' : '▼';
+        });
+    }
 });
 
 window.showResetButtonIfNeeded = showResetButtonIfNeeded;

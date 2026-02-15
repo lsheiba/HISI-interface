@@ -1177,3 +1177,70 @@ input[type="file"].audio-evaluation,
 .reset-btn i {
     margin-right: 6px;
 }
+
+/* Speaker legend for diarization */
+.speaker-legend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.speaker-legend-title {
+    font-weight: bold;
+    color: #333;
+    font-size: 12px;
+}
+
+.speaker-legend-items {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.speaker-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.speaker-legend-item.speaker_00 { background-color: #FF5733; color: white; }
+.speaker-legend-item.speaker_01 { background-color: #33FF57; color: black; }
+.speaker-legend-item.speaker_02 { background-color: #3357FF; color: white; }
+.speaker-legend-item.speaker_03 { background-color: #FF33F5; color: white; }
+.speaker-legend-item.speaker_04 { background-color: #FF8C33; color: white; }
+.speaker-legend-item.speaker_05 { background-color: #33FFF5; color: black; }
+
+/* Transcript expand/collapse */
+.transcript-container {
+    transition: max-height 0.3s ease;
+    overflow: hidden;
+}
+
+.transcript-container.collapsed {
+    max-height: 60px;
+}
+
+.transcript-expand-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.transcript-expand-btn:hover {
+    color: #333;
+}

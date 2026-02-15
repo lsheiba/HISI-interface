@@ -463,6 +463,32 @@ function handleTranscriptionEvent(data) {
     if (data.segments && Array.isArray(data.segments)) {
         segments.push(...data.segments);
         updateSegmentsTable(data.segments);
+        updateSpeakerLegendUpload(data.segments);
+    }
+}
+
+function updateSpeakerLegendUpload(segments) {
+    const uniqueSpeakers = new Set();
+    segments.forEach(seg => {
+        if (seg.speaker) uniqueSpeakers.add(seg.speaker);
+    });
+    
+    const legendItems = document.getElementById('speaker-legend-items-upload');
+    const legendContainer = document.getElementById('speaker-legend-upload');
+    if (!legendItems || !legendContainer) return;
+    
+    if (uniqueSpeakers.size > 0) {
+        legendContainer.style.display = 'flex';
+        legendItems.innerHTML = '';
+        uniqueSpeakers.forEach(speaker => {
+            const speakerClass = speaker.toLowerCase().replace(/\s+/g, '-');
+            const item = document.createElement('span');
+            item.className = `speaker-legend-item speaker-${speakerClass}`;
+            item.textContent = speaker;
+            legendItems.appendChild(item);
+        });
+    } else {
+        legendContainer.style.display = 'none';
     }
 }
 
@@ -684,21 +710,45 @@ function initTimeline() {
  * @param {Array<Object>} newSegments - An array of new segment objects.
  */
 function updateTimeline(newSegments) {
-    if (!timelineItems) return;
+    console.log('updateTimeline (upload) called with', newSegments?.length, 'segments');
+    if (!timelineItems || !timeline) {
+        console.warn("Timeline (upload) not initialized. Cannot update.");
+        return;
+    }
+    
+    timelineItems.clear();
 
-    newSegments.forEach((segment, idx) => {
-        const key = `${segment.start}-${segment.end}`;
-        if (!addedSegmentKeys.has(key)) {
+    if (newSegments && newSegments.length > 0) {
+        newSegments.forEach((segment, idx) => {
             timelineItems.add({
                 id: idx,
                 content: segment.text,
                 start: segment.start * 1000,
                 end: segment.end * 1000,
             });
-            addedSegmentKeys.add(key);
+        });
+
+        const lastSegment = newSegments[newSegments.length - 1];
+        if (lastSegment) {
+            timeline.setOptions({
+                max: lastSegment.end * 1000 + 1000,
+            });
         }
-    });
+    }
+
+    window.segments = newSegments;
 }
 
 // --- DOM Content Loaded Event ---
-document.addEventListener('DOMContentLoaded', initTimeline);
+document.addEventListener('DOMContentLoaded', () => {
+    initTimeline();
+    
+    const toggleBtn = document.getElementById('transcript-toggle-upload');
+    const transcriptContainer = document.getElementById('transcript-container');
+    if (toggleBtn && transcriptContainer) {
+        toggleBtn.addEventListener('click', () => {
+            transcriptContainer.classList.toggle('collapsed');
+            toggleBtn.textContent = transcriptContainer.classList.contains('collapsed') ? '▶' : '▼';
+        });
+    }
+});
