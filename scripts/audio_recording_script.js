@@ -800,9 +800,13 @@ function handleServerUpdate(data) {
             const duration = segment.end - segment.start;
             
             let speakerCell = '';
-            if (window.diarizationEnabled && segment.speaker) {
-                const speakerClass = segment.speaker.toLowerCase().replace(/\s+/g, '-');
-                speakerCell = `<td class="speaker-cell speaker-${speakerClass}">${segment.speaker}</td>`;
+            if (window.diarizationEnabled) {
+                if (segment.speaker) {
+                    const speakerClass = segment.speaker.toLowerCase().replace(/\s+/g, '-');
+                    speakerCell = `<td class="speaker-cell speaker-${speakerClass}">${segment.speaker}</td>`;
+                } else {
+                    speakerCell = `<td class="speaker-cell">-</td>`;
+                }
             }
             
             row.innerHTML = `

@@ -91,7 +91,13 @@ async def transcribe_audio_in_chunks(
         processed_output = await asyncio.to_thread(processor.process_iter)
         if processed_output and processed_output[2]:
             beg, end, text = processed_output
-            segment = {"start": beg, "end": end, "text": text, "final": False}
+            chunk_offset = i / sample_rate
+            segment = {
+                "start": beg + chunk_offset,
+                "end": end + chunk_offset,
+                "text": text,
+                "final": False,
+            }
 
             if diarization_processor and diarization_processor.is_enabled:
                 try:
@@ -111,7 +117,13 @@ async def transcribe_audio_in_chunks(
     final_flush_output = await asyncio.to_thread(processor.finish)
     if final_flush_output and final_flush_output[2]:
         beg, end, text = final_flush_output
-        segment = {"start": beg, "end": end, "text": text, "final": True}
+        final_offset = max(0, len(audio) - samples_per_chunk) / sample_rate
+        segment = {
+            "start": beg + final_offset,
+            "end": end + final_offset,
+            "text": text,
+            "final": True,
+        }
 
         if diarization_processor and diarization_processor.is_enabled:
             try:

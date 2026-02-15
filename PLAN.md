@@ -60,7 +60,7 @@ Make the transcript panel resizable (expandable/collapsible).
 - [ ] 4.3 - Save expand state to localStorage
 - [ ] 4.4 - Handle responsive layout for mobile
 
-**Files:**
+**Files:** 
 - `index.html`
 - `scripts/style.css`
 - `scripts/audio_recording_script.js`

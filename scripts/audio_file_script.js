@@ -356,10 +356,20 @@ function updateSegmentsTable(newSegments) {
         if (!addedSegmentKeysTable.has(key)) {
             const row = document.createElement('tr');
             const duration = segment.end - segment.start;
+            
+            let speakerCell = '';
+            if (segment.speaker) {
+                const speakerClass = segment.speaker.toLowerCase().replace(/\s+/g, '-');
+                speakerCell = `<td class="speaker-cell speaker-${speakerClass}">${segment.speaker}</td>`;
+            } else {
+                speakerCell = `<td class="speaker-cell">-</td>`;
+            }
+            
             row.innerHTML = `
                 <td class="time-cell">${formatTime(segment.start)}</td>
                 <td class="time-cell">${formatTime(segment.end)}</td>
                 <td class="duration-cell">${formatDuration(duration)}</td>
+                ${speakerCell}
                 <td style="max-width: 300px; word-wrap: break-word;">${segment.text}</td>
                 <td>
                     <div class="segment-actions">
