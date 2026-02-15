@@ -490,22 +490,18 @@ function applySavedConfig() {
     const saved = loadConfigFromLocalStorage();
     if (!saved) return;
     
-    if (saved.backend && backendSelect) {
-        backendSelect.value = saved.backend;
-        const selectedBackend = backendsData.find(b => b.id === saved.backend);
-        if (selectedBackend) {
-            modelSelect.innerHTML = '';
-            modelSelect.disabled = false;
-            selectedBackend.models.forEach(model => {
-                const opt = document.createElement('option');
-                opt.value = model.id;
-                opt.textContent = model.name || model.id;
-                modelSelect.appendChild(opt);
-                
-                if (saved.model && model.id === saved.model) {
-                    opt.selected = true;
+    if (saved.backend) {
+        const backendExists = backendsData.some(b => b.id === saved.backend);
+        if (backendExists) {
+            backendSelect.value = saved.backend;
+            updateModelDropdown();
+            
+            if (saved.model && modelSelect) {
+                const modelExists = Array.from(modelSelect.options).some(o => o.value === saved.model);
+                if (modelExists) {
+                    modelSelect.value = saved.model;
                 }
-            });
+            }
         }
     }
     
