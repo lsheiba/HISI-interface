@@ -646,8 +646,12 @@ async function populateBackendDropdowns() {
             backendSelect.appendChild(opt);
         });
 
-        if (backendsData.length > 0) {
+        applySavedConfig();
+        
+        if (backendsData.length > 0 && !backendSelect.value) {
             backendSelect.value = backendsData[0].id;
+            updateModelDropdown();
+        } else if (backendSelect.value) {
             updateModelDropdown();
         }
     } catch (e) {
@@ -1101,11 +1105,10 @@ document.addEventListener('DOMContentLoaded', () => {
             resetRecordingData();
         });
     }
-    initTimeline(); // Initialize timeline on DOMContentLoaded
-    updateButtonState(); // Set initial button state
-    showResetButtonIfNeeded(); // Set initial reset button visibility
-    populateBackendDropdowns(); // Populate backend/model dropdowns from server
-    applySavedConfig(); // Restore saved config from localStorage
+    initTimeline();
+    updateButtonState();
+    showResetButtonIfNeeded();
+    populateBackendDropdowns();
 });
 
 window.showResetButtonIfNeeded = showResetButtonIfNeeded;
