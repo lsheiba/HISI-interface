@@ -1244,3 +1244,20 @@ input[type="file"].audio-evaluation,
 .transcript-expand-btn:hover {
     color: #333;
 }
+
+/* Stop Transcript Button */
+.stop-transcript-btn {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.stop-transcript-btn:hover {
+    background-color: #c82333;
+}

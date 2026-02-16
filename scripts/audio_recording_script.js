@@ -35,6 +35,7 @@ const micImg = document.querySelector('.microphone-icon');
 const transcriptTextElement = document.getElementById('transcript-text');
 const segmentsTableBody = document.getElementById('segments-table-body-recording');
 const resetBtnContainer = document.getElementById('reset-recording-btn-container');
+const stopTranscriptBtn = document.getElementById('stop-transcript-btn');
 
 // Backend catalog cache
 let backendsData = [];
@@ -194,6 +195,10 @@ function updateButtonState() {
 
         micImg.src = 'static/assets/microphone_icon.png';
         stopRecordingTimer();
+        
+        if (stopTranscriptBtn) {
+            stopTranscriptBtn.style.display = 'none';
+        }
 
         if (resetBtnContainer) {
             resetBtnContainer.disabled = false;
@@ -208,6 +213,10 @@ function updateButtonState() {
         if (resetBtnContainer) {
             resetBtnContainer.disabled = true;
         }
+        
+        if (stopTranscriptBtn) {
+            stopTranscriptBtn.style.display = 'none';
+        }
     } else if (peerConnection.connectionState === "connected") {
         startButtonText.textContent = 'Stop Recording';
         micImg.src = 'static/assets/stop_recording.png';
@@ -215,6 +224,10 @@ function updateButtonState() {
         startButton.disabled = false;
         startButton.style.opacity = '1';
         startButton.style.cursor = 'pointer';
+
+        if (stopTranscriptBtn) {
+            stopTranscriptBtn.style.display = 'inline-block';
+        }
 
         if (resetBtnContainer) {
             resetBtnContainer.disabled = true;
@@ -1117,6 +1130,12 @@ startButton.addEventListener('click', () => {
         stop();
     }
 });
+
+if (stopTranscriptBtn) {
+    stopTranscriptBtn.addEventListener('click', () => {
+        stop();
+    });
+}
 
 // Speaker/Mute Button for Recorded Playback
 document.querySelector('.speaker-recording').addEventListener('click', () => {

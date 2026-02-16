@@ -13,13 +13,14 @@ let mousePosition = null;
 let zoomTimeout = null;
 let wavesurfer;
 let activeRegion = null;
-let loop = false; // This variable seems unused in the provided code
+let loop = false;
 const BASE_ZOOM = 100;
 let segments = [];
 let isTranscribing = false;
 let addedSegmentKeysTable = new Set();
-let addedSegmentKeys = new Set(); // For timeline items
-let colorIndex = 0; // Track current color index for regions
+let addedSegmentKeys = new Set();
+let colorIndex = 0;
+let abortController = null;
 
 const colors = [
     "rgba(186, 233, 255, 0.5)",
@@ -340,6 +341,11 @@ document.getElementById('start-trasncript-btn').addEventListener('click', async 
     await startTranscription();
 });
 
+document.getElementById('stop-transcript-upload-btn').addEventListener('click', function(e) {
+    e.preventDefault();
+    stopTranscription();
+});
+
 // --- Transcription Related Functions ---
 
 /**
@@ -553,6 +559,11 @@ async function startTranscription() {
 
         startBtn.textContent = 'Transcribing...';
         startBtn.disabled = true;
+        
+        const stopBtn = document.getElementById('stop-transcript-upload-btn');
+        if (stopBtn) {
+            stopBtn.style.display = 'inline-block';
+        }
 
         const transcriptionStartTime = performance.now();
         const audioDuration = wavesurfer.getDuration() || 0;
@@ -569,9 +580,11 @@ async function startTranscription() {
             timelineItems.clear();
         }
 
+        abortController = new AbortController();
         const response = await fetch('/upload_and_transcribe', {
             method: 'POST',
             body: formData,
+            signal: abortController.signal,
         });
 
         if (!response.ok) {
@@ -645,18 +658,42 @@ async function startTranscription() {
         displayRTF(rtf, processingTimeSeconds, audioDuration);
         updateTimeline(segments);
         isTranscribing = false;
+        abortController = null;
 
         if (window.timeline2) {
             window.timeline2.focus(0);
         }
     } catch (error) {
+        if (error.name === 'AbortError') {
+            console.log('Transcription stopped by user');
+            const stopBtn = document.getElementById('stop-transcript-upload-btn');
+            if (stopBtn) {
+                stopBtn.style.display = 'none';
+            }
+            return;
+        }
         isTranscribing = false;
         console.error('Transcription failed:', error);
         alert(error.message || 'Transcription failed. Check browser console for details.');
     } finally {
         startBtn.textContent = 'Start Transcription';
         startBtn.disabled = false;
+        const stopBtn = document.getElementById('stop-transcript-upload-btn');
+        if (stopBtn) {
+            stopBtn.style.display = 'none';
+        }
+        if (wavesurfer) {
+            wavesurfer.pause();
+        }
     }
+}
+
+function stopTranscription() {
+    if (abortController) {
+        abortController.abort();
+        abortController = null;
+    }
+    isTranscribing = false;
 }
 
 // --- Timeline Initialization and Updates ---
