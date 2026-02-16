@@ -32,36 +32,6 @@ const colors = [
 // --- Utility Functions ---
 
 /**
- * Formats time in seconds to MM:SS.SSS string for precise timing.
- * @param {number} seconds - The time in seconds.
- * @returns {string} Formatted time string.
- */
-function formatTime(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toFixed(3).padStart(6, '0')}`;
-}
-
-/**
- * Formats duration in seconds to Hh Mm S.Sms string.
- * @param {number} seconds - The duration in seconds.
- * @returns {string} Formatted duration string.
- */
-function formatDuration(seconds) {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-
-    if (hours > 0) {
-        return `${hours}h ${minutes}m ${secs.toFixed(1)}s`;
-    } else if (minutes > 0) {
-        return `${minutes}m ${secs.toFixed(1)}s`;
-    } else {
-        return `${secs.toFixed(1)}s`;
-    }
-}
-
-/**
  * Resets all UI elements and data related to audio and transcription.
  */
 function resetAllData() {
@@ -91,7 +61,7 @@ function resetAllData() {
 
     document.getElementById('progress_upload').textContent = '00:00.000';
 
-    const transcriptBtn = document.getElementById('start-trasncript-btn');
+    const transcriptBtn = document.getElementById('start-transcript-btn');
     if (transcriptBtn) {
         transcriptBtn.textContent = 'Start Transcription';
         transcriptBtn.disabled = false;
@@ -303,7 +273,7 @@ document.getElementById('audio_file').addEventListener('change', function(e) {
     const waveformContainer = document.getElementById('waveform');
 
     if (file) {
-        const transcriptBtn = document.getElementById('start-trasncript-btn');
+        const transcriptBtn = document.getElementById('start-transcript-btn');
         transcriptBtn.disabled = false;
 
         if (noFileMessage) {
@@ -336,7 +306,7 @@ document.getElementById('audio_file').addEventListener('change', function(e) {
     });
 });
 
-document.getElementById('start-trasncript-btn').addEventListener('click', async function(e) {
+document.getElementById('start-transcript-btn').addEventListener('click', async function(e) {
     e.preventDefault();
     await startTranscription();
 });
@@ -474,28 +444,7 @@ function handleTranscriptionEvent(data) {
 }
 
 function updateSpeakerLegendUpload(segments) {
-    const uniqueSpeakers = new Set();
-    segments.forEach(seg => {
-        if (seg.speaker) uniqueSpeakers.add(seg.speaker);
-    });
-    
-    const legendItems = document.getElementById('speaker-legend-items-upload');
-    const legendContainer = document.getElementById('speaker-legend-upload');
-    if (!legendItems || !legendContainer) return;
-    
-    if (uniqueSpeakers.size > 0) {
-        legendContainer.style.display = 'flex';
-        legendItems.innerHTML = '';
-        uniqueSpeakers.forEach(speaker => {
-            const speakerClass = speaker.toLowerCase().replace(/\s+/g, '-');
-            const item = document.createElement('span');
-            item.className = `speaker-legend-item speaker-${speakerClass}`;
-            item.textContent = speaker;
-            legendItems.appendChild(item);
-        });
-    } else {
-        legendContainer.style.display = 'none';
-    }
+    updateSpeakerLegend(segments, 'speaker-legend-items-upload', 'speaker-legend-upload');
 }
 
 /**
@@ -544,7 +493,7 @@ function displayRTF(rtf, processingTime, audioDuration) {
  * Initiates the audio transcription process by sending the file to the server.
  */
 async function startTranscription() {
-    const startBtn = document.getElementById('start-trasncript-btn');
+    const startBtn = document.getElementById('start-transcript-btn');
     try {
         const fileInput = document.getElementById('audio_file');
         const file = fileInput?.files?.[0];
@@ -665,7 +614,6 @@ async function startTranscription() {
         }
     } catch (error) {
         if (error.name === 'AbortError') {
-            console.log('Transcription stopped by user');
             const stopBtn = document.getElementById('stop-transcript-upload-btn');
             if (stopBtn) {
                 stopBtn.style.display = 'none';
@@ -747,7 +695,6 @@ function initTimeline() {
  * @param {Array<Object>} newSegments - An array of new segment objects.
  */
 function updateTimeline(newSegments) {
-    console.log('updateTimeline (upload) called with', newSegments?.length, 'segments');
     if (!timelineItems || !timeline) {
         console.warn("Timeline (upload) not initialized. Cannot update.");
         return;

@@ -91,36 +91,6 @@ function updateTimelineCursor(timeInMs, forceUpdate = false) {
 }
 
 /**
- * Formats time in seconds to MM:SS.SSS string for precise timing.
- * @param {number} seconds - The time in seconds.
- * @returns {string} Formatted time string.
- */
-function formatTime(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toFixed(3).padStart(6, '0')}`;
-}
-
-/**
- * Formats duration in seconds to Hh Mm S.Sms string.
- * @param {number} seconds - The duration in seconds.
- * @returns {string} Formatted duration string.
- */
-function formatDuration(seconds) {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-
-    if (hours > 0) {
-        return `${hours}h ${minutes}m ${secs.toFixed(1)}s`;
-    } else if (minutes > 0) {
-        return `${minutes}m ${secs.toFixed(1)}s`;
-    } else {
-        return `${secs.toFixed(1)}s`;
-    }
-}
-
-/**
  * Generates a random color from a predefined list.
  * @returns {string} RGBA color string.
  */
@@ -403,17 +373,14 @@ function initTimeline() {
  * @param {Array<Object>} segments - An array of segment objects.
  */
 function updateTimeline(segments) {
-    console.log('updateTimeline called with', segments?.length, 'segments');
-    console.log('timelineItems:', !!timelineItems, 'timeline:', !!timeline);
     if (!timelineItems || !timeline) {
         console.warn("Timeline not initialized properly. Cannot update.");
         return;
     }
 
-    timelineItems.clear(); // Clear existing items
+    timelineItems.clear();
 
     if (segments && segments.length > 0) {
-        console.log('Adding', segments.length, 'segments to timeline');
         segments.forEach((segment, idx) => {
             timelineItems.add({
                 id: idx,
@@ -429,7 +396,6 @@ function updateTimeline(segments) {
                 max: lastSegment.end * 1000 + 1000,
             });
         }
-        console.log('Timeline items after add:', timelineItems.length);
     } 
 
     window.segments = segments; 
@@ -717,9 +683,7 @@ async function setupWebRTC() {
         // Create data channel for communication
         const dataChannel = peerConnection.createDataChannel('text');
 
-        dataChannel.onopen = () => {
-            console.log("Data channel open - ready for communication");
-        };
+        dataChannel.onopen = () => { };
         
         dataChannel.onclose = () => {
             // Stop audio tracks when data channel closes
@@ -798,10 +762,8 @@ function waitForIceGatheringComplete(pc) {
  * @param {string} data - JSON string containing transcription payload.
  */
 function handleServerUpdate(data) {
-    console.log('handleServerUpdate called with data length:', data?.length);
     try {
         const payload = JSON.parse(data);
-        console.log('Payload received:', { fullTranscript: payload.full_transcript?.length, segmentsCount: payload.segments?.length });
         transcriptTextElement.textContent = historicalTranscript + (payload.full_transcript || "");
         document.getElementById('transcript-container').scrollTop = document.getElementById('transcript-container').scrollHeight;
 
@@ -870,28 +832,7 @@ function handleServerUpdate(data) {
 }
 
 function updateSpeakerLegend(segments) {
-    const uniqueSpeakers = new Set();
-    segments.forEach(seg => {
-        if (seg.speaker) uniqueSpeakers.add(seg.speaker);
-    });
-    
-    const legendItems = document.getElementById('speaker-legend-items-recording');
-    const legendContainer = document.getElementById('speaker-legend-recording');
-    if (!legendItems || !legendContainer) return;
-    
-    if (uniqueSpeakers.size > 0) {
-        legendContainer.style.display = 'flex';
-        legendItems.innerHTML = '';
-        uniqueSpeakers.forEach(speaker => {
-            const speakerClass = speaker.toLowerCase().replace(/\s+/g, '-');
-            const item = document.createElement('span');
-            item.className = `speaker-legend-item speaker-${speakerClass}`;
-            item.textContent = speaker;
-            legendItems.appendChild(item);
-        });
-    } else {
-        legendContainer.style.display = 'none';
-    }
+    updateSpeakerLegend(segments, 'speaker-legend-items-recording', 'speaker-legend-recording');
 }
 
 /**
@@ -986,10 +927,7 @@ function addRegionsToRecordedWaveform() {
  * Stops the WebRTC connection and finalizes the recording process.
  */
 function stop() {
-    // Call backend to reset handler state
     fetch('reset_handler', { method: 'POST' })
-        .then(response => response.json())
-        .then(data => console.log('Backend handler reset:', data))
         .catch(err => console.warn('Failed to reset backend handler:', err));
 
     if (peerConnection) {
@@ -1123,10 +1061,8 @@ startButton.addEventListener('click', () => {
             alert('Live recording requires streaming. Enable streaming updates or use Upload Audio File mode.');
             return;
         }
-        console.log("🐛 stop called");
         setupWebRTC();
     } else {
-        console.log("🐛 stop called");
         stop();
     }
 });

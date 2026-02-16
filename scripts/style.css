@@ -9,6 +9,22 @@
     --region-opacity: 0.7;
     --region-border-radius: 6px;
     --region-top-offset: 7.5%;
+
+    /* Component colors */
+    --speaker-1: #FF5733;
+    --speaker-2: #33FF57;
+    --speaker-3: #3357FF;
+    --speaker-4: #FF33F5;
+    --speaker-5: #FF8C33;
+    --speaker-6: #33FFF5;
+    
+    /* Stop button */
+    --stop-btn-bg: #dc3545;
+    --stop-btn-hover: #c82333;
+    
+    /* Timeline */
+    --timeline-item-bg: rgb(245, 192, 94);
+    --timeline-border: orange;
 }
 
 html, body {
